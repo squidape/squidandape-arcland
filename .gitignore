@@ -1,0 +1,30 @@
+# Compiler files
+cache/
+out/
+
+# Commonly ignored directories
+.logs/
+.ignore/
+
+# Ignores development broadcast logs
+!/broadcast
+/broadcast/*/31337/
+/broadcast/**/dry-run/
+
+# Docs
+docs/
+
+# Dotenv file
+.env
+.env.*
+!.env.example
+
+# Keys. Circle's own use-arc skill makes this a Security Rule: never hardcode,
+# commit or log a private key, and never pass one as a plaintext CLI flag in a
+# deployed environment (testnet included). Deployment uses an encrypted keystore
+# under .keystore/, which must never leave this machine.
+.keystore/
+*.keystore
+keystore/
+*.key
+password.txt
