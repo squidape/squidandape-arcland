@@ -1,5 +1,5 @@
 /*
- * Bitcoin Landbank — the 3D globe.
+ * Arc Land Registry — the 3D globe.
  *
  * The whole supply as land on a sphere:
  *

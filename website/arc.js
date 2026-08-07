@@ -1,5 +1,5 @@
 /*
- * Bitcoin Landbank — the Arc land registry.
+ * Arc Land Registry — the on-chain half.
  *
  * The world view draws all 21,000,000 BTC as a 50 x 42 grid of 2,100 tiles of
  * 10,000 BTC each. The top-100 richest addresses occupy the first 309. This

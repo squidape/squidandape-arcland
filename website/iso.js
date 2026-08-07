@@ -1,5 +1,5 @@
 /*
- * Bitcoin Landbank — the isometric board.
+ * Arc Land Registry — the isometric board.
  *
  * A tactics-RPG map of the supply. Every tile is one 1 BTC block; a block's top
  * face divides into 10 x 10 = 100 parcels of 0.01 BTC. Tiles you own are lit in

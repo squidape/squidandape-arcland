@@ -28,3 +28,9 @@ docs/
 keystore/
 *.key
 password.txt
+
+# Ledger backups written by the site's Backup button. These contain a real
+# holdings history and must never be committed. Both prefixes: the download name
+# changed with the rename, older backups keep the old one.
+arcland-*.json
+landbank-*.json

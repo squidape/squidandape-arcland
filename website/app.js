@@ -1,13 +1,17 @@
 /*
- * Bitcoin Landbank — every number on the page is derived here.
+ * Arc Land Registry — every number on the page is derived here.
  *
  * Everything above the "DOM layer" divider is a pure function: no globals, no DOM,
  * no network. That is what lets tests.html check the math in a browser without a
  * test runner (there is no Node on this machine, by design).
  *
- * The site makes ZERO network requests. Circulating supply is computed from
- * Bitcoin's own issuance schedule rather than fetched, so there is no API key,
- * no CORS surface, no rate limit, and no geo-block to worry about.
+ * Circulating supply is COMPUTED from Bitcoin's own issuance schedule rather
+ * than fetched, so there is no API key, no CORS surface and no rate limit for
+ * any figure on this page.
+ *
+ * The page is not offline-only any more: price.js reaches two public tickers and
+ * arc.js reads the Arc registry. Neither sends the ledger, and neither is needed
+ * for the board or the maths — see the privacy note in index.html.
  */
 
 'use strict';
@@ -332,7 +336,7 @@ function backup() {
                         { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `landbank-${wibDateString()}.json`;   // WIB, per the date rule
+  a.download = `arcland-${wibDateString()}.json`;   // WIB, per the date rule
   a.click();
   URL.revokeObjectURL(a.href);
 }

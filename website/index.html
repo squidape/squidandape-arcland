@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Bitcoin Landbank — how much of 21,000,000 is yours?</title>
-<meta name="description" content="Record every Bitcoin buy and watch your landbank grow against the only 21 million that will ever exist. Your data never leaves your browser.">
+<title>Arc Land Registry — claim your piece of the map</title>
+<meta name="description" content="All 21,000,000 Bitcoin drawn as a map. Claim an unowned tile on Arc, where gas is paid in USDC. Your holdings never leave your browser and never go on chain.">
 <meta name="color-scheme" content="dark light">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗺️</text></svg>">
 <script>
@@ -34,9 +34,9 @@
 
 <header class="topbar">
   <div class="wrap topbar__inner">
-    <span class="brand">🗺️ <strong>Bitcoin Landbank</strong></span>
+    <span class="brand">🗺️ <strong>Arc Land Registry</strong></span>
     <span class="topbar__right">
-      <span class="topbar__note">Your data stays in this browser. Nothing is uploaded.</span>
+      <span class="topbar__note">Your holdings stay in this browser. They are never uploaded.</span>
       <button id="theme-toggle" class="btn btn--ghost" type="button"
               aria-label="Switch between light and dark theme">☀ LIGHT</button>
     </span>
@@ -121,7 +121,7 @@
 
   <!-- ============================================================= stats -->
   <section class="panel" aria-labelledby="h-holdings">
-    <h2 id="h-holdings">Your landbank</h2>
+    <h2 id="h-holdings">Your land</h2>
 
     <div class="total">
       <div class="total__btc"><span id="stat-btc">0</span> <span class="unit">BTC</span></div>
@@ -311,9 +311,12 @@
     <dl class="faq">
       <dt>Where is my data stored?</dt>
       <dd>In this browser only, under <code>localStorage</code>. There is no account, no
-          server, and no database — this page makes zero network requests after it loads.
-          That also means it is not synced: use <strong>Backup</strong> to move your ledger
-          to another device.</dd>
+          server and no database, and your holdings are <strong>never transmitted</strong>.
+          The page does make two kinds of request, and neither carries them: a price
+          lookup, and reads of the public Arc registry to see which tiles are claimed.
+          Claiming a tile puts a tile number, your label and your wallet address on chain —
+          never how much Bitcoin you own. It is not synced: use <strong>Backup</strong> to
+          move your ledger to another device.</dd>
       <dt>"Your share of the world's Bitcoin"</dt>
       <dd>21,000,000 BTC divided by ~8.2 billion people is <strong>0.00256 BTC each</strong>.
           The multiple is how many of those shares you hold.</dd>
@@ -339,7 +342,7 @@
 </main>
 
 <footer class="footer wrap">
-  <p>Bitcoin Landbank · no tracking, no accounts, no server · <a href="tests.html">math tests</a></p>
+  <p>Arc Land Registry · no tracking, no accounts, no server · <a href="tests.html">math tests</a></p>
 </footer>
 
 <script src="whales.js"></script>

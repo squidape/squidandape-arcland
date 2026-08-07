@@ -1,5 +1,5 @@
 /*
- * Bitcoin Landbank — the price feed.
+ * Arc Land Registry — the price feed.
  *
  * This is the ONLY part of the site that touches the network, and it is worth
  * being explicit about the trade: before it existed the page made zero requests
