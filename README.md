@@ -1,8 +1,11 @@
 # Arc Land Registry
 
-A shared registry of the 2,100 world tiles that [Bitcoin Land](https://lim-agg.pages.dev/#/bitcoin-land)
-draws, claimable on **[Arc](https://docs.arc.io)** — Circle's Layer-1, where the native gas
-token is USDC.
+A standalone site and smart contract. The 2,100 world tiles of Bitcoin's supply are drawn as a
+map, and the ones nobody owns are claimable on **[Arc](https://docs.arc.io)** — Circle's
+Layer-1, where the native gas token is USDC.
+
+This repo is self-contained: open `website/index.html` and it runs. No build step, no npm, no
+host page, no dependency on any other project.
 
 The map was drawn once: all 21,000,000 BTC as a 50 × 42 grid of tiles worth 10,000 BTC each.
 The 100 richest Bitcoin addresses already occupy the first 309. **The remaining 1,791 are
@@ -12,9 +15,9 @@ open**, and this contract records who claimed which.
 |---|---|
 | Contract | `src/ArcLandRegistry.sol` |
 | Chain | Arc Testnet (`5042002`) |
-| Address | *not yet deployed* |
-| Front end | [`lim-landbank/website/arc.js`](../lim-landbank/website/arc.js) — zero dependencies |
-| Tests | 56 local + 7 fork + a live-chain script |
+| Address | [`0xaE6E1017427e437017202Ffa1A9854848c9BC56b`](https://testnet.arcscan.app/address/0xaE6E1017427e437017202Ffa1A9854848c9BC56b) — verified |
+| Front end | `website/` — the whole site, standalone, zero dependencies, no build step |
+| Tests | 56 local + 7 fork + 20 live-chain + 320 in-browser |
 
 ---
 
@@ -148,7 +151,7 @@ makes the zero-dependency front end possible.
 
 This was a constraint, not a choice — the machine has no Node — and it turned into the most
 interesting part of the project. Every Circle example assumes `npm install wagmi viem`.
-[`arc.js`](../lim-landbank/website/arc.js) instead:
+[`website/arc.js`](website/arc.js) instead:
 
 - **reads** by posting raw JSON-RPC `eth_call` to an ordered list of Arc endpoints, so the map
   renders for visitors with **no wallet installed at all**;
@@ -178,8 +181,7 @@ script/deploy-testnet.sh 500000000000000000   # or 0.5 USDC, in 18-decimal wei
 script/arc-live-checks.sh 0xYourContract
 ```
 
-Then paste the address into `ARC_CONTRACT` in `lim-landbank/website/arc.js` and run
-`lim-landbank/scripts/sync-bitcoin-land.sh`.
+Then paste the address into `ARC_CONTRACT` in `website/arc.js`.
 
 **The deploy key does not keep control.** It is a throwaway keypair generated on the build
 machine, and because the deploy is non-interactive its keystore password sits in a local file.

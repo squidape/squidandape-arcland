@@ -1,0 +1,15 @@
+# HTML must always revalidate: a cached index.html that predates a new script
+# tag leaves the page running old markup against new JS, which fails in ways
+# that look like a broken feature rather than a stale cache.
+/
+  Cache-Control: no-cache
+/index.html
+  Cache-Control: no-cache
+/tests.html
+  Cache-Control: no-cache
+
+# Fingerprint-free assets still revalidate; Pages already sends max-age=0.
+/*.js
+  Cache-Control: no-cache
+/*.css
+  Cache-Control: no-cache

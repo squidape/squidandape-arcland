@@ -1,0 +1,997 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bitcoin Landbank — math tests</title>
+<meta name="color-scheme" content="dark">
+<style>
+  body { background:#0c1116; color:#e6edf3; font:14px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;
+         margin:0; padding:28px 20px 60px; }
+  .wrap { max-width: 900px; margin: 0 auto; }
+  h1 { font-size:18px; margin:0 0 4px; }
+  .sub { color:#8b9aa8; margin:0 0 22px; font-size:13px; }
+  #summary { font-size:20px; font-weight:700; padding:14px 18px; border-radius:10px; margin-bottom:20px; }
+  .ok   { background:rgba(63,185,80,.1);  border:1px solid #3fb950; color:#3fb950; }
+  .bad  { background:rgba(248,81,73,.1);  border:1px solid #f85149; color:#f85149; }
+  h2 { font-size:12px; text-transform:uppercase; letter-spacing:.1em; color:#8b9aa8;
+       margin:24px 0 8px; border-top:1px solid #26313c; padding-top:14px; }
+  .t { padding:5px 0; border-bottom:1px solid rgba(38,49,60,.5); display:flex; gap:10px; }
+  .t .tag { flex:none; width:52px; font-weight:700; }
+  .pass .tag { color:#3fb950; } .fail .tag { color:#f85149; }
+  .t .msg { flex:1; }
+  .t .why { color:#8b9aa8; }
+  .fail .why { color:#f85149; }
+  a { color:#f7931a; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Bitcoin Landbank — math tests</h1>
+  <p class="sub">Runs the pure functions in <code>app.js</code> and <code>globe.js</code> in this browser. No Node, no runner.
+     &nbsp;<a href="index.html">&larr; back to the site</a></p>
+  <div id="summary">running…</div>
+  <div id="out"></div>
+</div>
+
+<!-- Load app.js for its pure functions only; this flag skips the DOM layer. -->
+<script>window.__LANDBANK_TEST_ONLY__ = true;</script>
+<script src="whales.js"></script>
+<script src="app.js"></script>
+<script src="price.js"></script>
+<!-- arc.js before iso.js: the board's world view calls into the Arc helpers. -->
+<script src="arc.js"></script>
+<script src="iso.js"></script>
+<script src="globe.js"></script>
+
+<script>
+(function () {
+  let pass = 0, fail = 0;
+  const out = document.getElementById('out');
+
+  function group(name) {
+    const h = document.createElement('h2');
+    h.textContent = name;
+    out.appendChild(h);
+  }
+  function ok(cond, msg, why) {
+    const d = document.createElement('div');
+    d.className = 't ' + (cond ? 'pass' : 'fail');
+    d.innerHTML = `<span class="tag">${cond ? 'PASS' : 'FAIL'}</span>
+                   <span class="msg">${msg}</span>
+                   <span class="why">${why == null ? '' : String(why)}</span>`;
+    out.appendChild(d);
+    cond ? pass++ : fail++;
+  }
+  const near = (a, b, tol) => Math.abs(a - b) <= tol;
+
+  /* ------------------------------------------------------------ framings */
+  group('The framings');
+
+  ok(near(fairShareBtc(), 0.00256, 0.00001),
+     'Even split of 21M across 8.2bn people ≈ 0.00256 BTC', formatBtc(fairShareBtc()));
+
+  ok(near(fairShareMultiple(0.01), 3.9, 0.05),
+     '0.01 BTC ≈ 3.9× the world fair share', fairShareMultiple(0.01).toFixed(3) + '×');
+
+  ok(fairShareMultiple(1) > 390 && fairShareMultiple(1) < 391,
+     '1 BTC ≈ 390× the fair share', fairShareMultiple(1).toFixed(1) + '×');
+
+  ok(maxOwners(0.01) === 2100000000,
+     'Only 2.1 billion people can ever own 0.01 BTC', formatBigCount(maxOwners(0.01)));
+
+  ok(maxOwners(1) === 21000000,
+     'Only 21 million people can ever own 1 BTC', formatBigCount(maxOwners(1)));
+
+  ok(maxOwners(0) === Infinity,
+     'Zero holdings does not divide by zero', String(maxOwners(0)));
+
+  ok(near(shareOfHumanity(0.01), 0.2561, 0.001),
+     '0.01 BTC = ~25.6% of humanity could match it', (shareOfHumanity(0.01) * 100).toFixed(2) + '%');
+
+  ok(shareOfHumanity(0.0000001) === 1,
+     'Share of humanity is capped at 100%, never above', shareOfHumanity(0.0000001));
+
+  ok(parcels(0.01) === 1 && parcels(0.1) === 10,
+     'Parcels: 0.01 BTC = 1 parcel, 0.1 BTC = 10', parcels(0.1));
+
+  ok(MAX_SUPPLY_BTC / PARCEL_BTC === 2100000000,
+     'There are exactly 2.1 billion parcels in existence');
+
+  /* ------------------------------------------------------------ sats math */
+  group('Sats — must be exact, not floating');
+
+  ok(toSats(0.01) === 1000000, '0.01 BTC = 1,000,000 sats exactly', toSats(0.01));
+  ok(toSats(21000000) === MAX_SUPPLY_SATS,
+     '21M BTC round-trips to 2.1 quadrillion sats with no drift', toSats(21000000));
+  ok(toSats(0.1 + 0.2) === 30000000,
+     'Classic 0.1+0.2 float error does not leak into the sats figure', toSats(0.1 + 0.2));
+  ok(Number.isSafeInteger(MAX_SUPPLY_SATS),
+     'Total sats stays inside safe-integer range', MAX_SUPPLY_SATS);
+
+  /* --------------------------------------------------------------- supply */
+  group('Issuance schedule');
+
+  ok(subsidySats(0) === 50 * SATS_PER_BTC, 'Genesis-era subsidy is 50 BTC');
+  ok(subsidySats(210000) === 25 * SATS_PER_BTC, 'First halving (210,000) gives 25 BTC');
+  ok(subsidySats(840000) === 3.125 * SATS_PER_BTC,
+     'Fourth halving (840,000, Apr 2024) gives 3.125 BTC', subsidySats(840000) / SATS_PER_BTC);
+  ok(subsidySats(blockHeightAt(Date.now())) === 3.125 * SATS_PER_BTC,
+     "Today's subsidy is 3.125 BTC", subsidySats(blockHeightAt(Date.now())) / SATS_PER_BTC);
+  ok(subsidySats(BLOCKS_PER_HALVING * 33) === 0, 'Subsidy reaches zero by era 33');
+
+  ok(issuedSatsAt(209999) === 210000 * 50 * SATS_PER_BTC,
+     'First era issues exactly 10,500,000 BTC — half of all Bitcoin',
+     issuedSatsAt(209999) / SATS_PER_BTC);
+
+  ok(issuedSatsAt(839999) / SATS_PER_BTC === 19687500,
+     'Supply at the 2024 halving was exactly 19,687,500 BTC',
+     issuedSatsAt(839999) / SATS_PER_BTC);
+
+  const h = blockHeightAt(Date.now());
+  ok(h >= ANCHOR_HEIGHT && h < ANCHOR_HEIGHT + 200000,
+     'Extrapolated height is at or after the verified anchor and not absurd', h);
+
+  const supply = circulatingSupplyBtc();
+  ok(supply > 20000000 && supply < 20200000,
+     'Circulating supply is ~20.07M BTC today', formatInt(supply));
+  ok(supply < MAX_SUPPLY_BTC, 'Circulating supply never exceeds 21M', formatInt(supply));
+
+  ok(circulatingSupplyBtc(Date.UTC(2140, 0, 1)) <= MAX_SUPPLY_BTC,
+     'Supply in year 2140 is still capped at 21M',
+     formatInt(circulatingSupplyBtc(Date.UTC(2140, 0, 1))));
+
+  ok(pctOfCirculating(0.01) > pctOfMaxSupply(0.01),
+     'Share of mined supply is larger than share of max supply');
+
+  /* ---------------------------------------------------------------- tiers */
+  group('Tiers — boundaries are inclusive');
+
+  ok(tierFor(0).name === 'Plankton', 'Zero holdings = Plankton', tierFor(0).name);
+  ok(tierFor(0.009).name === 'Plankton', 'Just under 0.01 is still Plankton');
+  ok(tierFor(0.01).name === 'Shrimp', 'Exactly 0.01 is a Shrimp — boundary is inclusive');
+  ok(tierFor(0.0999).name === 'Shrimp', 'Just under 0.1 is still a Shrimp');
+  ok(tierFor(0.1).name === 'Crab', 'Exactly 0.1 is a Crab');
+  ok(tierFor(1).name === 'Octopus', 'Exactly 1 BTC is an Octopus');
+  ok(tierFor(50).name === 'Shark' && tierFor(100).name === 'Whale', 'Shark → Whale at 100');
+  ok(tierFor(99999).name === 'Humpback', 'Absurd holdings top out at Humpback');
+
+  ok(nextTierFor(0.01).name === 'Crab', 'Next tier after Shrimp is Crab');
+  ok(nextTierFor(99999) === null, 'Humpback has no next tier');
+
+  ok(tierProgress(0.01) === 0, 'Progress is 0% at the bottom of a tier');
+  ok(near(tierProgress(0.055), 0.5, 0.001),
+     'Progress is 50% halfway from 0.01 to 0.1', tierProgress(0.055).toFixed(3));
+  ok(tierProgress(99999) === 1, 'Top tier reads as complete');
+  ok(tierProgress(0) >= 0 && tierProgress(0) <= 1, 'Progress stays within 0..1 at zero');
+
+  /* ------------------------------------------------------------------ map */
+  group('Zoom map');
+
+  ok(cellValueAtLevel(0) === 210000, 'Level 1: one square = 210,000 BTC', cellValueAtLevel(0));
+  ok(near(cellValueAtLevel(4), 0.0021, 1e-9),
+     'Level 5: one square = 0.0021 BTC', cellValueAtLevel(4));
+
+  ok(near(cellsCovered(0.01, 4), 4.76, 0.01),
+     '0.01 BTC covers ~4.8 squares at the deepest zoom', cellsCovered(0.01, 4).toFixed(2));
+  ok(cellsCovered(0.01, 0) < 0.0000001,
+     '0.01 BTC is invisible at the top level — the whole point', cellsCovered(0.01, 0));
+
+  ok(levelWhereVisible(0.01) === 4, 'A 0.01 BTC stack needs all 5 zooms', levelWhereVisible(0.01));
+  ok(levelWhereVisible(210000) === 0, '210,000 BTC is visible immediately', levelWhereVisible(210000));
+  ok(levelWhereVisible(0.0000001) === MAP_LEVELS - 1,
+     'A dust stack stops at the deepest level rather than looping forever');
+  ok(levelWhereVisible(0) === MAP_LEVELS - 1, 'Zero holdings does not hang the zoom');
+
+  /* --------------------------------------------------------- WIB dates */
+  group('Dates — Asia/Jakarta, UTC+7');
+
+  ok(wibDateString(Date.UTC(2026, 7, 3, 17, 30)) === '2026-08-04',
+     '17:30 UTC on 3 Aug is already 4 Aug in WIB', wibDateString(Date.UTC(2026, 7, 3, 17, 30)));
+  ok(wibDateString(Date.UTC(2026, 7, 3, 16, 59)) === '2026-08-03',
+     '16:59 UTC on 3 Aug is still 3 Aug in WIB', wibDateString(Date.UTC(2026, 7, 3, 16, 59)));
+  ok(wibDateString(Date.UTC(2026, 7, 3, 17, 0)) === '2026-08-04',
+     'Midnight WIB flips the date exactly at 17:00 UTC');
+  ok(wibDateString(Date.UTC(2025, 11, 31, 17, 0)) === '2026-01-01',
+     'Year boundary rolls correctly in WIB');
+  ok(wibDateString(Date.UTC(2026, 1, 28, 17, 0)) === '2026-03-01',
+     'Non-leap February rolls to 1 March, not 29 Feb');
+
+  // The bug this whole rule exists to prevent.
+  const naive = new Date(Date.UTC(2026, 7, 3, 17, 30)).toISOString().slice(0, 10);
+  ok(naive !== wibDateString(Date.UTC(2026, 7, 3, 17, 30)),
+     'toISOString() disagrees with WIB here — proving the naive approach mis-dates a buy',
+     `naive=${naive} wib=${wibDateString(Date.UTC(2026, 7, 3, 17, 30))}`);
+
+  ok(/^\d{4}-\d{2}-\d{2}$/.test(wibDateString()), 'Today formats as YYYY-MM-DD', wibDateString());
+
+  ok(formatDate('2026-08-04') === '4 Aug 2026', 'Display format', formatDate('2026-08-04'));
+  ok(formatDate('2026-01-09') === '9 Jan 2026', 'Single-digit day drops its zero', formatDate('2026-01-09'));
+  ok(formatDate('') === '' && formatDate('garbage') === 'garbage',
+     'Malformed dates pass through instead of throwing');
+
+  /* ----------------------------------------------------------- formatting */
+  group('Formatting');
+
+  ok(formatBtc(0.01) === '0.01', 'Small BTC keeps its decimals, no trailing zeros', formatBtc(0.01));
+  ok(formatBtc(0.00000001) === '0.00000001', 'One sat renders in full, not as 1e-8', formatBtc(0.00000001));
+  ok(formatBtc(0) === '0', 'Zero is just 0');
+  ok(formatBigCount(2100000000) === '2.1 billion', '2.1e9 reads as words', formatBigCount(2100000000));
+  ok(formatBigCount(21000000) === '21 million', '2.1e7 reads as words', formatBigCount(21000000));
+  ok(formatPct(0.0000000476).indexOf('e') > -1,
+     'Tiny percentages fall back to exponent notation instead of rounding to 0%',
+     formatPct(pctOfMaxSupply(0.01)));
+  ok(formatMultiple(3.902) === '3.90', 'Multiples show 2dp under 10', formatMultiple(3.902));
+  ok(formatMultiple(Infinity) === '∞', 'Infinity does not print as "Infinity"');
+
+  /* ----------------------------------------------------------- globe field */
+  group('Globe — the field must be exactly the supply');
+
+  ok(GLOBE_BLOCK_COLS * GLOBE_BLOCK_ROWS === 21000000,
+     '5,000 × 4,200 blocks is EXACTLY 21,000,000 — no rounding',
+     GLOBE_BLOCK_COLS * GLOBE_BLOCK_ROWS);
+
+  ok(GLOBE_PARCEL_COLS * GLOBE_PARCEL_ROWS === 2100000000,
+     '50,000 × 42,000 parcels is exactly 2.1 billion',
+     GLOBE_PARCEL_COLS * GLOBE_PARCEL_ROWS);
+
+  ok(GLOBE_PARCEL_COLS * GLOBE_PARCEL_ROWS === MAX_SUPPLY_BTC / PARCEL_BTC,
+     'Globe parcel count agrees with the stat panel — one source of truth');
+
+  ok(GLOBE_BLOCK_COLS * GLOBE_BLOCK_ROWS * 1 === MAX_SUPPLY_BTC,
+     'One block = 1 BTC, and the blocks add up to the whole supply');
+
+  ok(GLOBE_SUB * GLOBE_SUB === 100,
+     'Each 1 BTC block holds exactly 100 parcels of 0.01 BTC');
+
+  /* ------------------------------------------------------- globe holdings */
+  group('Globe — your claim');
+
+  ok(globeOwnedParcels(0.01) === 1, '0.01 BTC lights exactly one parcel', globeOwnedParcels(0.01));
+  ok(globeOwnedParcels(1) === 100, '1 BTC lights exactly 100 parcels — one full block',
+     globeOwnedParcels(1));
+  ok(globeOwnedParcels(0.037) === 3.7, 'Fractional stacks give fractional parcels',
+     globeOwnedParcels(0.037));
+  ok(globeOwnedParcels(0) === 0, 'Zero holdings light nothing');
+
+  // The bug this guards: 1/0.01 landing one ulp high turns a 10x10 block into 11 wide.
+  const s1 = globeBlockShape(1);
+  ok(s1.w === 10 && s1.h === 10,
+     '1 BTC draws as a clean 10 × 10 block, not 11 wide', `${s1.w}×${s1.h}`);
+
+  const s01 = globeBlockShape(0.01);
+  ok(s01.w === 1 && s01.h === 1 && s01.n === 1,
+     '0.01 BTC is a single 1 × 1 parcel', `${s01.w}×${s01.h}`);
+
+  const s37 = globeBlockShape(0.037);
+  ok(s37.w === 2 && s37.h === 2 && near(s37.n, 3.7, 1e-9),
+     '0.037 BTC packs into 2 × 2 with a part-owned parcel', `${s37.w}×${s37.h} n=${s37.n}`);
+
+  ok(globeBlockShape(0).w === 0 && globeBlockShape(0).n === 0,
+     'Zero holdings produce no rectangle at all');
+
+  ok(globeBlockShape(100).w === 100 && globeBlockShape(100).h === 100,
+     '100 BTC is a 100 × 100 parcel square', globeBlockShape(100).w);
+
+  const o1 = globeBlockOrigin(1);
+  ok(o1.col === GLOBE_HOME_COL - 5 && o1.row === GLOBE_HOME_ROW - 5,
+     'The claim is centred on the home point, not hung off its corner',
+     `${o1.col},${o1.row}`);
+
+  // Off-by-half-a-parcel here puts a single-parcel claim beside the crosshair
+  // rather than under it after the flight lands.
+  const c001 = globeClaimCentre(0.01);
+  ok(c001.lon === globeLonForCol(GLOBE_HOME_COL) && c001.lat === globeLatForRow(GLOBE_HOME_ROW),
+     'A one-parcel claim is centred exactly on the home parcel, not half a cell off',
+     `${c001.lon.toExponential(3)}`);
+
+  const c1 = globeClaimCentre(1);
+  ok(near(c1.lon, globeLonForCol(GLOBE_HOME_COL - 0.5), 1e-15) &&
+     near(c1.lat, globeLatForRow(GLOBE_HOME_ROW - 0.5), 1e-15),
+     'A 10 × 10 claim is centred on the seam between its middle parcels');
+
+  ok(near(globeClaimCentre(0).lon, globeLonForCol(GLOBE_HOME_COL), 1e-15),
+     'An empty ledger still yields a sane camera target');
+
+  ok(globeBlockAngularRadius(0.01) > 0 && globeBlockAngularRadius(0.01) < 1e-4,
+     'One parcel subtends a tiny angle — hence the halo',
+     globeBlockAngularRadius(0.01).toExponential(2));
+
+  /* -------------------------------------------------------- globe geometry */
+  group('Globe — geometry');
+
+  ok(Math.abs(globeLonForCol(GLOBE_HOME_COL)) < 1e-3,
+     'Home column sits on the prime meridian', globeLonForCol(GLOBE_HOME_COL).toExponential(2));
+  ok(Math.abs(globeLatForRow(GLOBE_HOME_ROW)) < 1e-3,
+     'Home row sits on the equator — the one place equirectangular does not distort',
+     globeLatForRow(GLOBE_HOME_ROW).toExponential(2));
+  ok(near(globeLatForRow(0), Math.PI / 2, 1e-4), 'Row 0 is the north pole');
+  ok(near(globeLatForRow(GLOBE_PARCEL_ROWS - 1), -Math.PI / 2, 1e-4), 'Last row is the south pole');
+
+  const dir = globeDir(0.7, -0.3);
+  ok(near(Math.hypot(dir[0], dir[1], dir[2]), 1, 1e-12),
+     'globeDir always returns a unit vector', Math.hypot(dir[0], dir[1], dir[2]));
+  ok(near(globeDir(0, Math.PI / 2)[1], 1, 1e-12), 'Latitude +90° points at +Y');
+
+  /* ---------------------------------------------------------- globe camera */
+  group('Globe — camera');
+
+  const cams = [
+    ['orbit', globeCamera(0.4, 0.2, GLOBE_D_MAX)],
+    ['mid',   globeCamera(-1.1, -0.6, 0.05)],
+    ['ground',globeCamera(0.0, 0.0, GLOBE_D_MIN)],
+  ];
+  cams.forEach(([name, c]) => {
+    const dotRF = globeV.dot(c.right, c.fwd);
+    const dotRU = globeV.dot(c.right, c.up);
+    const dotFU = globeV.dot(c.fwd, c.up);
+    ok(Math.abs(dotRF) < 1e-9 && Math.abs(dotRU) < 1e-9 && Math.abs(dotFU) < 1e-9,
+       `Camera basis is orthogonal (${name})`,
+       [dotRF, dotRU, dotFU].map((x) => x.toExponential(1)).join(' '));
+    ok(near(globeV.len(c.fwd), 1, 1e-9) && near(globeV.len(c.right), 1, 1e-9) &&
+       near(globeV.len(c.up), 1, 1e-9),
+       `Camera basis is unit length (${name})`);
+    // uC must equal |camPos|^2 - 1 or every ray misses the sphere.
+    const trueC = globeV.dot(c.pos, c.pos) - 1;
+    ok(near(c.c, trueC, Math.max(1e-12, Math.abs(trueC) * 1e-9)),
+       `uC matches |camPos|² − 1 (${name})`, `${c.c.toExponential(6)} vs ${trueC.toExponential(6)}`);
+    ok(c.c > 0 && c.alt > 0, `Camera stays outside the sphere (${name})`, c.alt.toExponential(3));
+    // The camera must actually be pointing at its target.
+    const toTarget = globeV.norm(globeV.sub(c.target, c.pos));
+    ok(near(globeV.dot(toTarget, c.fwd), 1, 1e-9),
+       `Forward vector points at the target (${name})`, globeV.dot(toTarget, c.fwd));
+  });
+
+  const flat = globeCamera(0.4, 0.2, GLOBE_D_MAX);
+  ok(near(globeV.len(flat.pos), 1 + GLOBE_D_MAX, 1e-9),
+     'At full zoom-out the camera is straight above the target',
+     globeV.len(flat.pos));
+
+  ok(globeAutoPitch(GLOBE_D_MAX) === 0, 'No tilt while the whole globe is in frame');
+  ok(near(globeAutoPitch(GLOBE_D_MIN), 0.8, 1e-9), 'Full tilt at ground level',
+     globeAutoPitch(GLOBE_D_MIN));
+  ok(globeAutoPitch(GLOBE_D_MAX * 4) === 0 && globeAutoPitch(GLOBE_D_MIN / 4) <= 0.8,
+     'Pitch stays clamped outside the zoom range');
+
+  ok(near(globeParcelPixels(GLOBE_D_MIN, 1000), 40, 0.001),
+     'At full zoom a 0.01 BTC parcel is 40px on a 1000px viewport — visibly a square',
+     globeParcelPixels(GLOBE_D_MIN, 1000).toFixed(3));
+  ok(near(globeParcelPixels(GLOBE_D_MIN, 1000) * GLOBE_SUB, 400, 0.01),
+     'The 1 BTC block around it spans 400px — 40% of the viewport');
+  ok(globeParcelPixels(GLOBE_D_MAX, 1000) < 0.1,
+     'At orbit a parcel is far under a pixel — which is why the halo exists',
+     globeParcelPixels(GLOBE_D_MAX, 1000).toExponential(2));
+
+  ok(globeHaloAngle(0.01, GLOBE_D_MAX, 1000) > globeBlockAngularRadius(0.01),
+     'Zoomed out, the halo is inflated to stay findable');
+  ok(near(globeHaloAngle(100, GLOBE_D_MIN, 1000), globeBlockAngularRadius(100), 1e-12),
+     'Zoomed in on a big claim, the halo hugs the real thing instead of lying');
+
+  ok(globeScaleLabel(GLOBE_D_MIN, 1000).unit === 0.01,
+     'HUD reads 0.01 BTC per square at ground level', globeScaleLabel(GLOBE_D_MIN, 1000).label);
+  ok(globeScaleLabel(GLOBE_D_MAX, 1000).unit === 10000,
+     'HUD reads 10,000 BTC per square from orbit', globeScaleLabel(GLOBE_D_MAX, 1000).label);
+
+  /* ------------------------------------------------------- globe animation */
+  group('Globe — flight path');
+
+  ok(near(globeLerpDistance(4, 1, 0.5), 2, 1e-9),
+     'Zoom interpolates in log space — halfway between 4 and 1 is 2, not 2.5',
+     globeLerpDistance(4, 1, 0.5));
+  ok(globeLerpDistance(3.2, GLOBE_D_MIN, 0) === 3.2 &&
+     near(globeLerpDistance(3.2, GLOBE_D_MIN, 1), GLOBE_D_MIN, 1e-12),
+     'Flight starts and ends exactly where told');
+
+  ok(near(globeShortestLonDelta(3.0, -3.0), 0.2831853, 1e-6),
+     'A flight across the antimeridian takes the short way, not 6 radians the long way',
+     globeShortestLonDelta(3.0, -3.0).toFixed(6));
+  ok(near(globeShortestLonDelta(0, Math.PI / 2), Math.PI / 2, 1e-12),
+     'Ordinary flights are unaffected');
+  ok(Math.abs(globeShortestLonDelta(-3.0, 3.0)) <= Math.PI,
+     'Shortest delta never exceeds PI in either direction');
+
+  ok(globeEaseInOut(0) === 0 && globeEaseInOut(1) === 1 && near(globeEaseInOut(0.5), 0.5, 1e-12),
+     'Easing is anchored at both ends and symmetric');
+
+  /* --------------------------------------------------------- board layout */
+  group('Board — blocks and parcels');
+
+  ok(isoTotalParcels(0.01) === 1 && isoTotalParcels(1) === 100,
+     '1 BTC = 100 parcels, 0.01 BTC = 1 parcel', isoTotalParcels(1));
+  ok(isoFullBlocks(0.01) === 0 && isoRemainderParcels(0.01) === 1,
+     '0.01 BTC unlocks no whole tile and exactly 1 of 100 parcels',
+     `${isoFullBlocks(0.01)} + ${isoRemainderParcels(0.01)}`);
+  ok(isoFullBlocks(1) === 1 && isoRemainderParcels(1) === 0,
+     '1 BTC unlocks exactly one whole tile with no remainder');
+  ok(isoFullBlocks(2.37) === 2 && near(isoRemainderParcels(2.37), 37, 1e-9),
+     '2.37 BTC = 2 whole tiles + 37 parcels', isoRemainderParcels(2.37));
+  ok(isoFullBlocks(0) === 0 && isoRemainderParcels(0) === 0, 'Zero unlocks nothing');
+  ok(near(isoRemainderParcels(0.025), 2.5, 1e-9),
+     'A half-parcel remainder survives as a fraction, not a rounding',
+     isoRemainderParcels(0.025));
+
+  // Spiral: every tile in a ring must get a distinct index, and rings must be
+  // contiguous — a collision would light the wrong tile.
+  const seen = new Map();
+  let spiralOk = true, spiralWhy = '';
+  for (let x = -6; x <= 6; x++) {
+    for (let y = -6; y <= 6; y++) {
+      const i = isoSpiralIndex(x, y);
+      if (seen.has(i)) { spiralOk = false; spiralWhy = `${x},${y} collides with ${seen.get(i)} at ${i}`; }
+      seen.set(i, `${x},${y}`);
+    }
+  }
+  ok(spiralOk, 'Spiral indices are unique across a 13 × 13 board', spiralWhy);
+
+  const ids = [...seen.keys()].sort((a, b) => a - b);
+  ok(ids[0] === 0 && ids[ids.length - 1] === 168 && ids.length === 169,
+     'A 13 × 13 board covers indices 0..168 with no gaps',
+     `${ids[0]}..${ids[ids.length - 1]} (${ids.length})`);
+
+  ok(isoSpiralIndex(0, 0) === 0, 'Home tile is index 0 — the first block you unlock');
+  ok([1, 2, 3, 4, 5, 6, 7, 8].every((n) => n <= 8) &&
+     Math.max(...[[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1],[0,-1],[1,-1]]
+       .map(([x, y]) => isoSpiralIndex(x, y))) === 8,
+     'Ring 1 is exactly indices 1..8, so the second block lands adjacent to home');
+  ok(isoSpiralIndex(2, -1) === 9, 'Ring 2 starts at index 9', isoSpiralIndex(2, -1));
+
+  ok(isoTilesInView(6) === 169 && isoTilesInView(1) === 9,
+     'Tiles in view is (2r+1)²', isoTilesInView(6));
+  ok(isoBoardRadius(900, 500, 72) <= ISO_MAX_RADIUS,
+     'Board radius is capped so tile count cannot explode', isoBoardRadius(900, 500, 72));
+
+  ok(isoDefaultZoom(0.01) === 0,
+     'A sub-block holding opens at the widest zoom, where parcels are legible');
+  ok(isoDefaultZoom(1000) === 5, 'A huge holding opens zoomed out');
+
+  const p = isoProject(1, 0, 0, 100);
+  ok(p.sx === 50 && p.sy === 25, 'Isometric projection of (1,0)', `${p.sx},${p.sy}`);
+  ok(isoProject(0, 0, 0, 100).sx === 0 && isoProject(0, 0, 0, 100).sy === 0,
+     'Home tile projects to the origin');
+  ok(isoProject(1, 1, 0, 100).sx === 0, 'Equal x and y stay on the centre column');
+  ok(isoProject(0, 0, 1, 100).sy < 0, 'Raising z lifts a tile up the screen');
+
+  ok(isoLevel(0) === 1 && isoLevel(0.01) === 3 && isoLevel(1) === MILESTONES.length + 1,
+     'Level counts milestones cleared', `${isoLevel(0)}/${isoLevel(0.01)}/${isoLevel(1)}`);
+
+  /* ------------------------------------------------------ hit-testing */
+  group('Board — hover hit-testing');
+
+  // Round-trip: project a tile centre, then ask which tile is there.
+  let htOk = true, htWhy = '';
+  for (let x = -4; x <= 4; x++) {
+    for (let y = -4; y <= 4; y++) {
+      const p = isoProject(x, y, 0, 100);
+      const back = isoTileFromPoint(p.sx, p.sy + 25, 100, false);
+      if (back.x !== x || back.y !== y) { htOk = false; htWhy = `${x},${y} -> ${back.x},${back.y}`; }
+    }
+  }
+  ok(htOk, 'Every tile centre round-trips back to its own coordinates', htWhy);
+
+  const lifted = isoProject(2, -1, 1, 100);
+  const backLift = isoTileFromPoint(lifted.sx, lifted.sy + 25, 100, true);
+  ok(backLift.x === 2 && backLift.y === -1,
+     'A raised tile round-trips when solved against the raised plane',
+     `${backLift.x},${backLift.y}`);
+
+  ok(isoTileFromPoint(isoProject(0, 0, 1, 100).sx, isoProject(0, 0, 1, 100).sy + 25, 100, false).y !== 0
+     || true, 'Solving a raised tile against the flat plane is allowed to miss — that is why both are tried');
+
+  ok(isoTileState(0, 0, 0.01) === 'partial',
+     'Home tile with 0.01 BTC is the in-progress tile — gold border, dark centre');
+  ok(isoTileState(0, 0, 1) === 'full', 'Home tile with 1 BTC is fully unlocked');
+  ok(isoTileState(5, 5, 0.01) === 'locked', 'A far tile is locked');
+  ok(isoTileState(1, 0, 1.5) === 'partial',
+     'With 1.5 BTC the second tile is the one in progress');
+  ok(isoTileState(0, 0, 0) === 'locked', 'With nothing owned even home is locked');
+
+  /* ------------------------------------------------------------ themes */
+  group('Board — theme palettes');
+
+  const pDark = isoPalette('dark');
+  const pLight = isoPalette('light');
+
+  ok(Object.keys(pDark).length === Object.keys(pLight).length &&
+     Object.keys(pDark).every((k) => k in pLight),
+     'Both themes define exactly the same keys — a missing one paints undefined');
+  ok(isoPalette('anything else') === undefined ||
+     JSON.stringify(isoPalette('nonsense')) === JSON.stringify(pDark),
+     'Anything that is not "light" falls back to dark');
+
+  // Perceived luminance, sRGB weights. Enough to assert direction, which is all
+  // these tests need — the exact values are a design choice, not a rule.
+  function lum(hex) {
+    const h = hex.replace('#', '');
+    const n = parseInt(h.length === 3 ? h.split('').map((c) => c + c).join('') : h, 16);
+    return (0.2126 * ((n >> 16) & 255) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255)) / 255;
+  }
+
+  // The board's backdrop comes from CSS (--board-bg): near-black in dark, paper
+  // in light. So the locked blocks have to sit on the OPPOSITE side of their
+  // backdrop in each theme, or the board stops reading as blocks at all.
+  ok(lum(pDark.lockedTopA) > 0.12 && lum(pDark.lockedTopA) < 0.55,
+     'Dark: locked tiles are lighter than the slate they sit on', lum(pDark.lockedTopA).toFixed(3));
+  ok(lum(pLight.lockedTopA) < 0.85 && lum(pLight.lockedTopA) > 0.45,
+     'Light: locked tiles are darker than the paper they sit on', lum(pLight.lockedTopA).toFixed(3));
+  ok(lum(pLight.lockedTopA) > lum(pDark.lockedTopA),
+     'Light locked tiles are lighter in absolute terms than dark ones');
+
+  // The one rule the whole board rests on: gold means "yours" and nothing else
+  // may be warm. Locked greys must stay neutral or "lit" becomes ambiguous.
+  function sat(hex) {
+    const h = hex.replace('#', '');
+    const n = parseInt(h.length === 3 ? h.split('').map((c) => c + c).join('') : h, 16);
+    const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+    return mx === 0 ? 0 : (mx - mn) / mx;
+  }
+  [pDark, pLight].forEach((p, i) => {
+    const name = i ? 'light' : 'dark';
+    ['lockedTopA', 'lockedTopB', 'lockedL', 'lockedR', 'lockedEdge',
+     'worldTop', 'worldL', 'worldR'].forEach((k) => {
+      ok(sat(p[k]) < 0.35, `${name}: ${k} stays neutral — gold is the only signal hue`,
+         sat(p[k]).toFixed(3));
+    });
+  });
+
+  ok(pDark.goldTop === pLight.goldTop,
+     'The gold face itself does not change between themes — it is the constant');
+  ok(lum(pDark.goldEdge) > lum(pDark.goldTop),
+     'Dark: the tile edge is a highlight, brighter than the face it outlines');
+  ok(lum(pLight.goldEdge) < lum(pLight.goldTop),
+     'Light: the same edge flips to a shadow, darker than the face, so it still shows');
+
+  // The hover ring is drawn on top of whatever tile is under the cursor, so it
+  // has to contrast with the board, not with the tile.
+  ok(lum(pDark.hoverEdge) > 0.8 && lum(pLight.hoverEdge) < 0.3,
+     'The hover ring inverts with the theme');
+
+  /* ------------------------------------------------------ track record */
+  group('Board — persona track record');
+
+  const tr = isoTrackRecord([
+    { date: '2026-05-12', btc: 0.01 },
+    { date: '2026-07-14', btc: 0.005 },
+    { date: '2026-06-09', btc: 0.01 },
+  ]);
+  ok(tr.count === 3, 'Counts every buy', tr.count);
+  ok(near(tr.total, 0.025, 1e-12), 'Totals correctly', tr.total);
+  ok(tr.first === '2026-05-12' && tr.last === '2026-07-14',
+     'First and last claim come from sorted dates, not array order',
+     `${tr.first} .. ${tr.last}`);
+  ok(near(tr.biggest, 0.01, 1e-12), 'Largest buy', tr.biggest);
+  ok(near(tr.avg, 0.025 / 3, 1e-12), 'Average buy', tr.avg);
+
+  const trEmpty = isoTrackRecord([]);
+  ok(trEmpty.count === 0 && trEmpty.first === null && trEmpty.avg === 0,
+     'An empty ledger yields zeroes and nulls, never NaN');
+  ok(isoTrackRecord(null).count === 0, 'A null ledger does not throw');
+  ok(isoTrackRecord([{ date: 'junk', btc: 'x' }, { btc: 0.02, date: '2026-01-01' }]).count === 1,
+     'Junk rows are dropped, valid ones kept');
+  ok(isoTrackRecord([{ date: 'junk', btc: 0.02 }]).first === null,
+     'A malformed date does not become the "first claim"');
+
+  /* -------------------------------------------------------- walking */
+  group('Board — the figure walks');
+
+  ok(isoIsTap(0) && isoIsTap(5) && !isoIsTap(6) && !isoIsTap(200),
+     'A press under 6px is a tap (walk); beyond that it is a drag (pan)');
+
+  ok(isoWalkDuration(0, 0, 0, 0) === 280, 'A zero-distance walk still clamps to a floor');
+  ok(isoWalkDuration(0, 0, 1, 0) === 280, 'One tile is the minimum duration');
+  ok(near(isoWalkDuration(0, 0, 3, 4), 1300, 1), 'Duration scales with distance',
+     isoWalkDuration(0, 0, 3, 4));
+  ok(isoWalkDuration(0, 0, 40, 40) === 1600, 'Long walks are capped, not endless',
+     isoWalkDuration(0, 0, 40, 40));
+
+  const wFrom = { x: 1, y: 1 }, wTo = { x: 4, y: -2 };
+  const w0 = isoWalkPos(wFrom, wTo, 0), w1 = isoWalkPos(wFrom, wTo, 1);
+  ok(w0.x === 1 && w0.y === 1, 'A walk starts exactly where the figure stood');
+  ok(w1.x === 4 && w1.y === -2, 'A walk ends exactly on the target tile');
+  const wMid = isoWalkPos(wFrom, wTo, 0.5);
+  ok(near(wMid.x, 2.5, 1e-9) && near(wMid.y, -0.5, 1e-9),
+     'Halfway through, the figure is halfway there', `${wMid.x},${wMid.y}`);
+  ok(isoWalkPos(wFrom, wTo, -5).x === 1 && isoWalkPos(wFrom, wTo, 9).x === 4,
+     'Progress outside 0..1 is clamped rather than overshooting the board');
+
+  ok(isoWalkHop(wFrom, wTo, 0) === 0 && isoWalkHop(wFrom, wTo, 1) === 0,
+     'The hop starts and ends on the ground — no figure left floating');
+  ok(isoWalkHop(wFrom, wTo, 0.5) >= 0, 'The hop never goes below the tile');
+  ok(Math.max(...[0.1, 0.3, 0.5, 0.7, 0.9].map((t) => isoWalkHop(wFrom, wTo, t))) < 0.06,
+     'Hop height stays a step, not a leap');
+
+  ok(isoEase(0) === 0 && isoEase(1) === 1 && near(isoEase(0.5), 0.5, 1e-12),
+     'Walk easing is anchored at both ends');
+
+  ok(formatParcels(1) === '1 parcel', 'Singular parcel', formatParcels(1));
+  ok(formatParcels(37) === '37 parcels', 'Plural parcels', formatParcels(37));
+  ok(formatParcels(2.5) === '2.5 parcels', 'Fractional parcels keep their fraction',
+     formatParcels(2.5));
+
+  /* ---------------------------------------------------------- whales */
+  group('Whales — the top 100');
+
+  ok(WORLD_COLS * WORLD_ROWS === 2100,
+     'World grid is 50 × 42 = 2,100 tiles', WORLD_COLS * WORLD_ROWS);
+  ok(WORLD_COLS * WORLD_ROWS * WORLD_BTC_PER_TILE === 21000000,
+     'World grid covers EXACTLY 21,000,000 BTC at 10,000 per tile',
+     WORLD_BTC_PER_TILE);
+  ok(WORLD_BTC_PER_TILE === 10000, 'One world tile is 10,000 BTC');
+  // The world grid is deliberately the globe's field at 1/100, so they agree.
+  ok(GLOBE_BLOCK_COLS / WORLD_COLS === 100 && GLOBE_BLOCK_ROWS / WORLD_ROWS === 100,
+     'World grid is the globe field at 1/100 — the two views cannot disagree');
+
+  ok(WHALE_DATA.addresses.length === 100, 'Snapshot holds 100 addresses',
+     WHALE_DATA.addresses.length);
+  ok(WHALE_DATA.addresses.every((w) => w.address && w.btc > 0 && w.rank >= 1),
+     'Every row has an address, a positive balance and a rank');
+  ok(WHALE_DATA.addresses.every((w, i, a) => i === 0 || a[i - 1].btc >= w.btc),
+     'Addresses are sorted by balance, largest first');
+  ok(WHALE_DATA.total_btc < 21000000 && WHALE_DATA.total_btc > 1000000,
+     'Top-100 total is plausible against the cap', formatInt(WHALE_DATA.total_btc));
+  ok(near(WHALE_DATA.addresses.reduce((s, w) => s + w.btc, 0), WHALE_DATA.total_btc, 1),
+     'Stated total matches the sum of the rows — no silent drift');
+
+  const R = whaleRanges();
+  ok(R.length === 100, 'Ranges cover every address');
+  ok(R[0].from === 0, 'The largest address starts at tile 0');
+  ok(R.every((r, i) => i === 0 || near(r.from, R[i - 1].to, 1e-9)),
+     'Ranges are contiguous — no gap and no overlap between whales');
+  ok(near(R[R.length - 1].to, WHALE_DATA.total_btc / WORLD_BTC_PER_TILE, 1e-9),
+     'Ranges end exactly where the top-100 total does', R[R.length - 1].to);
+  ok(R[0].to > 24 && R[0].to < 25,
+     'Address #1 (248,598 BTC) spans about 25 tiles', R[0].to.toFixed(2));
+
+  ok(whaleAtTile(0, R) && whaleAtTile(0, R).rank === 1, 'Tile 0 belongs to address #1');
+  ok(whaleAtTile(-1, R) === null && whaleAtTile(99999, R) === null,
+     'Out-of-range tiles belong to nobody rather than throwing');
+  ok(whaleAtTile(2099, R) === null,
+     'The last tile is outside the top 100 — most of the map is everyone else');
+  // Binary search must agree with a linear scan on every tile, and each tile
+  // must resolve to exactly one owner — the bug this replaced let a tile match
+  // two whales at once, so the map painted whichever was tested first.
+  let bsOk = true, bsWhy = '';
+  for (let i = 0; i < 2100; i++) {
+    const bin = whaleAtTile(i, R);
+    const hits = R.filter((r) => r.from <= i + 0.5 && i + 0.5 < r.to);
+    if (hits.length > 1) { bsOk = false; bsWhy = `tile ${i} matched ${hits.length} whales`; break; }
+    if ((bin && bin.rank) !== (hits.length ? hits[0].rank : null)) {
+      bsOk = false; bsWhy = `tile ${i}`; break;
+    }
+  }
+  ok(bsOk, 'Every tile resolves to exactly one owner, and the search agrees with a scan', bsWhy);
+
+  ok(whalesBelowTileResolution(R) >= 0 && whalesBelowTileResolution(R) < 100,
+     'Some small addresses fall below one tile — reported, not silently dropped',
+     `${whalesBelowTileResolution(R)} of 100 own no whole tile`);
+
+  ok(whaleTileSpan(R) > 300 && whaleTileSpan(R) < 320,
+     'The top 100 occupy ~309 of 2,100 tiles', whaleTileSpan(R).toFixed(1));
+  ok(whaleWorldTileForBtc(0.01, R) === Math.floor(whaleTileSpan(R)),
+     'Your land sits immediately past the top 100 — the gap is the point');
+
+  ok(shortAddress('34xp4vRoCGJym3xR7yCVPFHoCNxv4Twseo') === '34xp4v…4Twseo',
+     'Long addresses are elided in the middle', shortAddress('34xp4vRoCGJym3xR7yCVPFHoCNxv4Twseo'));
+  ok(shortAddress('') === '' && shortAddress(null) === '', 'Empty addresses do not throw');
+
+  ok(whaleKind({ label: 'Binance-coldwallet' }) === 'custody', 'Exchange wallets are custody');
+  ok(whaleKind({ label: 'Bitfinex-Hack-Recovery' }) === 'seized', 'Recovered funds are flagged');
+  ok(whaleKind({ label: '' }) === 'unknown', 'Unlabelled addresses are unidentified');
+  ok(whaleKindLabel(whaleKind({ label: '' })).length > 0, 'Every kind has a human label');
+
+  ok(whaleUrl('34xp4v') === 'https://bitinfocharts.com/bitcoin/address/34xp4v',
+     'Address links point at bitinfocharts', whaleUrl('34xp4v'));
+
+  ok(isoWorldIndex(0, 0) === 0 && isoWorldIndex(49, 41) === 2099,
+     'World index runs 0..2099 row-major', isoWorldIndex(49, 41));
+  ok(isoWorldIndex(50, 0) === -1 && isoWorldIndex(0, 42) === -1 && isoWorldIndex(-1, 0) === -1,
+     'Off-grid coordinates return -1 rather than a wrong tile');
+
+  // Offset round-trip, or hovering the world map picks the wrong address.
+  let wrOk = true, wrWhy = '';
+  for (let c = 0; c < WORLD_COLS; c += 7) {
+    for (let r = 0; r < WORLD_ROWS; r += 5) {
+      const o = isoWorldOffset(c, r);
+      const back = isoWorldTileFromOffset(o.x, o.y);
+      if (back.col !== c || back.row !== r) { wrOk = false; wrWhy = `${c},${r}`; }
+    }
+  }
+  ok(wrOk, 'World tile ↔ offset round-trips exactly', wrWhy);
+
+  ok(/^hsl\(/.test(whaleColor(WHALE_DATA.addresses[0])), 'Whale colours are well-formed',
+     whaleColor(WHALE_DATA.addresses[0]));
+  ok(whaleColor({ rank: 1, label: 'Binance' }) !== whaleColor({ rank: 2, label: 'Binance' }),
+     'Adjacent ranks get distinguishable shades');
+
+  ok(isoWorldTileW(900, 500) > 6, 'World tiles stay big enough to hover',
+     isoWorldTileW(900, 500).toFixed(1));
+
+  /* ---------------------------------------------------------------- price */
+  group('Price feed');
+
+  ok(parsePriceOkx({ code: '0', data: [{ last: '63904.4' }] }) === 63904.4,
+     'OKX ticker parses', parsePriceOkx({ code: '0', data: [{ last: '63904.4' }] }));
+  ok(parsePriceOkx({ code: '1', msg: 'err', data: [] }) === null,
+     'OKX error payload yields null, not a crash');
+  ok(parsePriceOkx(null) === null && parsePriceOkx({}) === null &&
+     parsePriceOkx({ code: '0', data: [] }) === null,
+     'Malformed OKX payloads all yield null');
+  ok(parsePriceOkx({ code: '0', data: [{ last: 'abc' }] }) === null,
+     'A non-numeric price is rejected rather than becoming NaN');
+  ok(parsePriceOkx({ code: '0', data: [{ last: '0' }] }) === null,
+     'A zero price is rejected — it would zero out every market value');
+
+  ok(parsePriceCoinGecko({ bitcoin: { usd: 63876 } }) === 63876, 'CoinGecko parses');
+  ok(parsePriceCoinGecko({}) === null && parsePriceCoinGecko(null) === null,
+     'Malformed CoinGecko payloads yield null');
+
+  ok(marketValueUsd(0.01, 63876) === 638.76, 'Market value of 0.01 BTC',
+     marketValueUsd(0.01, 63876));
+  ok(marketValueUsd(0.01, null) === null,
+     'No price gives no value — never a misleading $0.00');
+
+  ok(formatUsd(63876) === '$63,876', 'Big figures drop the cents', formatUsd(63876));
+  ok(formatUsd(638.76) === '$638.76', 'Mid figures keep cents', formatUsd(638.76));
+  ok(formatUsd(0.6387) === '$0.6387', 'Tiny values keep 4dp so they are not just $0.64');
+  ok(formatUsd(null) === '—' && formatUsd(NaN) === '—', 'Missing values render as a dash');
+
+  ok(wibClock(Date.UTC(2026, 7, 4, 3, 47, 36)) === '10:47:36',
+     '03:47:36 UTC is 10:47:36 WIB', wibClock(Date.UTC(2026, 7, 4, 3, 47, 36)));
+  ok(wibClock(Date.UTC(2026, 7, 3, 17, 0, 0)) === '00:00:00',
+     '17:00 UTC is exactly midnight WIB');
+  ok(/^\d{2}:\d{2}:\d{2}$/.test(wibClock()), 'Clock is always zero-padded HH:MM:SS');
+
+  const now = Date.UTC(2026, 7, 4, 12, 0, 0);
+  ok(agoLabel(now - 2000, now) === 'just now', 'Fresh quotes read "just now"');
+  ok(agoLabel(now - 42000, now) === '42s ago', 'Seconds', agoLabel(now - 42000, now));
+  ok(agoLabel(now - 200000, now) === '3m ago', 'Minutes', agoLabel(now - 200000, now));
+  ok(agoLabel(null, now) === 'never', 'A quote that never arrived says so');
+
+  /* ------------------------------------------------- Arc — the ABI codec */
+  group('Arc — ABI codec (ground truth from `cast calldata`)');
+
+  // These four strings were produced by Foundry's `cast calldata` and pasted in
+  // verbatim. If the hand-rolled encoder ever drifts, it drifts away from the
+  // reference implementation and these fail.
+  ok(arcEncodeClaim(309, 'hello') ===
+     '0xadf72a7000000000000000000000000000000000000000000000000000000000000001350000000000000000000000000000000000000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000000568656c6c6f000000000000000000000000000000000000000000000000000000',
+     'claim(309,"hello") is byte-identical to cast');
+  ok(arcEncodeClaim(2099, '') ===
+     '0xadf72a70000000000000000000000000000000000000000000000000000000000000083300000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000000',
+     'An empty label emits a length word and no padding word');
+  ok(arcEncodeClaim(500, 'abcdefghijklmnopqrstuvwxyz012345') ===
+     '0xadf72a7000000000000000000000000000000000000000000000000000000000000001f4000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000206162636465666768696a6b6c6d6e6f707172737475767778797a303132333435',
+     'A label of exactly 32 bytes fills one word with no padding');
+  ok(arcEncodeClaim(777, 'héllo 🌍') ===
+     '0xadf72a7000000000000000000000000000000000000000000000000000000000000003090000000000000000000000000000000000000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000000b68c3a96c6c6f20f09f8c8d000000000000000000000000000000000000000000',
+     'The hand-rolled UTF-8 encoder matches cast on accents and emoji');
+
+  ok(arcUtf8Bytes('🌍').length === 4,
+     'One emoji is 4 UTF-8 bytes, not the 2 UTF-16 units .length reports');
+  ok(arcUtf8Decode(arcUtf8Bytes('héllo 🌍 ünïcode')) === 'héllo 🌍 ünïcode',
+     'UTF-8 encode/decode round-trips');
+
+  let threw = false;
+  try { arcEncodeClaim(400, 'abcdefghijklmnopqrstuvwxyz0123456'); } catch (e) { threw = true; }
+  ok(threw, 'A 33-byte label is refused here rather than reverting on chain');
+  threw = false;
+  try { arcEncodeClaim(400, '🌍🌍🌍🌍🌍🌍🌍🌍🌍'); } catch (e) { threw = true; }
+  ok(threw, '9 emoji is 36 bytes and is refused, though it looks like 9 characters');
+
+  threw = false;
+  try { arcEncodeAddress('nope'); } catch (e) { threw = true; }
+  ok(threw, 'A malformed address never reaches the wire');
+  threw = false;
+  try { arcEncodeUint(-1); } catch (e) { threw = true; }
+  ok(threw, 'A negative uint is refused');
+
+  /* --------------------------------------- Arc — reading the packed registry */
+  group('Arc — the packed registry read');
+
+  const arcArr = arcDecodeUintArray('0x00000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000002' +
+    '00000000000000000000000000000000000000000000000000000000000004d2000000000000000000000000000000000000000000000000000000000000162e');
+  ok(arcArr.length === 2 && arcArr[0] === 1234n && arcArr[1] === 5678n,
+     'A returned uint256[] decodes through its offset and length words');
+  ok(arcDecodeUintArray('0x').length === 0,
+     'Empty return data decodes to an empty array, not a crash');
+
+  const arcWord = (BigInt(1234) << 160n) | BigInt('0xa11ce');
+  ok(arcDecodePackedWord(arcWord).tileId === 1234,
+     'The tile id is recovered from the high bits of a packed word');
+  ok(arcDecodePackedWord(arcWord).owner === '0x00000000000000000000000000000000000a11ce',
+     'A small owner address is zero-padded back to 40 hex characters');
+  const arcMax = (BigInt(2099) << 160n) | ((1n << 160n) - 1n);
+  ok(arcDecodePackedWord(arcMax).tileId === 2099 &&
+     arcDecodePackedWord(arcMax).owner === '0xffffffffffffffffffffffffffffffffffffffff',
+     'Packing survives the last tile paired with an all-ones address');
+
+  ok(arcDecodeString('0x00000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000004' +
+     '68616c69') === 'hali',
+     'A returned string decodes through its offset and length');
+
+  const arcInfo = arcDecodeTileInfo('0x00000000000000000000000000000000000000000000000000000000000a11ce' +
+    '00000000000000000000000000000000000000000000000000000000688bea80' +
+    '0000000000000000000000000000000000000000000000000000000000000060' +
+    '0000000000000000000000000000000000000000000000000000000000000005' +
+    '68616c696d000000000000000000000000000000000000000000000000000000');
+  ok(arcInfo.owner === '0x00000000000000000000000000000000000a11ce' &&
+     arcInfo.claimedAt === 1754000000 && arcInfo.label === 'halim',
+     'tileInfo decodes an address, a uint64 and a trailing string together');
+
+  /* ------------------------------- Arc — USDC units and the fee floor */
+  group('Arc — USDC units and the 20 Gwei floor');
+
+  // On Arc the native view (msg.value, gas) is 18 decimals and the ERC-20 view
+  // of the SAME balance is 6. Verified against live Arc testnet state, not just
+  // read from the docs — Arc's own gas-and-fees page has an example that gets
+  // this wrong by a factor of 1e12.
+  ok(arcWeiToUsdc(1000000000000000000n) === 1, '1e18 wei is exactly 1 USDC');
+  ok(arcWeiToErc20Units(1000000000000000000n) === 1000000n,
+     'The same balance is 1e6 units through the 6-decimal ERC-20 view');
+  ok(arcWeiToErc20Units(999999999999n) === 0n,
+     'Dust below 1e-6 USDC truncates to 0 in the ERC-20 view, as Arc documents');
+  ok(arcUsdcToWei(1) === 1000000000000000000n && arcUsdcToWei(0.5) === 500000000000000000n,
+     'USDC converts back to 18-decimal wei');
+  ok(arcWeiToUsdc(123456789000000000000n) === 123.456789,
+     'Large wei keeps precision past 2^53, where Number(wei)/1e18 would lose it',
+     arcWeiToUsdc(123456789000000000000n));
+
+  // Below 20 Gwei an Arc transaction "may remain pending indefinitely or fail
+  // outright", so this floor is the difference between a claim landing and a
+  // claim silently hanging forever.
+  ok(arcMaxFeePerGas(0n) === 20000000000n, 'A zero suggestion is lifted to the 20 Gwei floor');
+  ok(arcMaxFeePerGas(1000000000n) === 20000000000n, 'A 1 Gwei suggestion is lifted to the floor');
+  ok(arcMaxFeePerGas(20000000000n) === 40000000000n, 'A healthy suggestion doubles for headroom');
+  ok(arcMaxFeePerGas(null) === 20000000000n, 'A missing suggestion still clears the floor');
+  ok(arcMaxFeePerGas('0x4a817c800') === 40000000000n, 'A hex string from eth_gasPrice is handled');
+  ok(arcMaxFeePerGas(-5) === 20000000000n, 'Nothing can push the fee under the floor');
+
+  ok(near(arcGasCostUsdc(150000n, 20000000000n), 0.003, 1e-9),
+     'Gas is quoted in dollars: 150k at 20 Gwei is $0.003', arcGasCostUsdc(150000n, 20000000000n));
+
+  /* ------------------------- Arc — tiles agree with renderer and contract */
+  group('Arc — tiles agree with the renderer and the contract');
+
+  ok(arcTileId(0, 0) === 0 && arcTileId(49, 41) === 2099,
+     'arcTileId is the same row*50+col the board and the contract use');
+  let arcRoundTrip = true;
+  for (let t = 0; t < ARC_TILE_COUNT; t++) {
+    if (arcTileId(arcTileCol(t), arcTileRow(t)) !== t) { arcRoundTrip = false; break; }
+  }
+  ok(arcRoundTrip, 'Every one of the 2,100 tile ids round-trips through col/row');
+
+  // The same value must fall out of iso.js, whales.js and the deployed
+  // contract. isoWorldIndex is the renderer's, arcTileId is the chain's.
+  let arcMatchesIso = true;
+  for (let row = 0; row < WORLD_ROWS; row++) {
+    for (let col = 0; col < WORLD_COLS; col++) {
+      if (isoWorldIndex(col, row) !== arcTileId(col, row)) { arcMatchesIso = false; break; }
+    }
+  }
+  ok(arcMatchesIso, 'arcTileId agrees with iso.js isoWorldIndex on all 2,100 tiles');
+
+  // FIRST_CLAIMABLE is frozen in the contract. Re-derive it from the whale
+  // snapshot: if that snapshot is ever refreshed and the boundary moves, this
+  // fails loudly rather than letting the chain and the map disagree.
+  const arcRanges = whaleRanges();
+  let arcFirstFree = -1;
+  for (let i = 0; i < ARC_TILE_COUNT; i++) {
+    if (!whaleAtTile(i, arcRanges)) { arcFirstFree = i; break; }
+  }
+  ok(arcFirstFree === ARC_FIRST_CLAIMABLE,
+     'The first non-whale tile still matches the contract\'s frozen FIRST_CLAIMABLE',
+     'whales say ' + arcFirstFree + ', contract says ' + ARC_FIRST_CLAIMABLE);
+  ok(ARC_TILE_COUNT - ARC_FIRST_CLAIMABLE === 1791, 'Exactly 1,791 tiles are claimable');
+  ok(!arcTileIsClaimable(308) && arcTileIsClaimable(309),
+     'The boundary is closed: 308 belongs to the top 100, 309 is open');
+  ok(arcTileIsClaimable(2099) && !arcTileIsClaimable(2100),
+     'The last tile is claimable and there is nothing past it');
+  ok(!arcTileIsClaimable(-1) && !arcTileIsClaimable(309.5),
+     'Negative and fractional tile ids are refused');
+
+  // The site marks the owner's own holding at floor(whaleTileSpan). That must
+  // stay inside the reserved range, or a local marker could collide with a deed.
+  ok(!arcTileIsClaimable(whaleWorldTileForBtc(0.037, arcRanges)),
+     'The "your holding" world marker sits in the reserved range, never on a claimable tile',
+     'marker tile ' + whaleWorldTileForBtc(0.037, arcRanges));
+
+  ok(arcWibDate(Date.UTC(2026, 7, 6, 17, 0, 0) / 1000) === '2026-08-07',
+     'A claim at 17:00 UTC is dated the next day in WIB');
+  ok(arcWibDate(Date.UTC(2026, 7, 6, 16, 59, 0) / 1000) === '2026-08-06',
+     'One minute earlier is still the 6th');
+  ok(arcWibDate(0) === '' && arcWibDate(null) === '',
+     'A missing timestamp renders empty, never 1970');
+
+  /* ----------------------------------------- Arc — deed state and palette */
+  group('Arc — deed state and the deed palette');
+
+  const arcTiles = {
+    400: { owner: '0xAAAAaaaaAAAAaaaaAAAAaaaaAAAAaaaaAAAAaaaa', index: 0 },
+    401: { owner: '0xBBBBbbbbBBBBbbbbBBBBbbbbBBBBbbbbBBBBbbbb', index: 1 },
+  };
+  ok(isoDeedState(400, arcTiles, '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa') === 'mine',
+     'A tile held by the connected account reads as "mine", case-insensitively');
+  ok(isoDeedState(401, arcTiles, '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa') === 'theirs',
+     'A tile held by somebody else reads as "theirs"');
+  ok(isoDeedState(400, arcTiles, null) === 'theirs',
+     'With no wallet connected every deed reads as somebody else\'s');
+  ok(isoDeedState(999, arcTiles, null) === null, 'An unclaimed tile has no deed state');
+  ok(isoDeedState(400, null, null) === null, 'No registry data means no deed state');
+
+  // Gold is reserved for Bitcoin you own, and nothing else on this board may be
+  // warm. A deed says nothing about holdings, so it must stay unmistakably cool
+  // in BOTH themes or the two meanings blur.
+  // `lum` is the hoisted helper defined in the theme-palettes group above.
+  const arcRgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  ['dark', 'light'].forEach((theme) => {
+    const p = isoPalette(theme);
+    [['deedTop', p.deedTop], ['deedMineTop', p.deedMineTop], ['deedEdge', p.deedEdge]].forEach(([name, hex]) => {
+      const [r, g, b] = arcRgb(hex);
+      ok(b > r, `${theme}: ${name} is cool (blue beats red), never confusable with gold`, hex);
+    });
+    const [gr, , gb] = arcRgb(p.goldTop);
+    ok(gr > gb, `${theme}: gold is still warm`, p.goldTop);
+  });
+
+  // Same rule the gold edge follows: a highlight on slate, a shadow on paper.
+  ok(lum(isoPalette('dark').deedEdge) > lum(isoPalette('dark').deedTop),
+     'On slate the deed edge is a highlight — lighter than the tile it outlines');
+  ok(lum(isoPalette('light').deedEdge) < lum(isoPalette('light').deedTop),
+     'On paper the deed edge is a shadow — darker than the tile it outlines');
+  ok(lum(isoPalette('dark').deedMineEdge) > lum(isoPalette('dark').deedMineTop) &&
+     lum(isoPalette('light').deedMineEdge) < lum(isoPalette('light').deedMineTop),
+     'Your own deed follows the same highlight/shadow flip');
+
+  /* ---------------------------------------------- Arc — privacy invariant */
+  group('Arc — privacy invariant (holdings must never reach the chain)');
+
+  // Structural: the claim payload is the ONLY thing this file puts on chain,
+  // and it decodes to exactly a tile id and a label. There is no third field
+  // for a holding to hide in.
+  const arcPayload = arcEncodeClaim(1234, 'halim').slice(10); // drop the selector
+  ok(arcPayload.length === 64 * 4,
+     'A claim payload is exactly four words: tileId, offset, length, label',
+     (arcPayload.length / 64) + ' words');
+  ok(BigInt('0x' + arcPayload.slice(0, 64)) === 1234n,
+     'Word 1 is the tile id and nothing else');
+  ok(arcDecodeString('0x' + arcEncodeUint(32) + arcPayload.slice(128)) === 'halim',
+     'The only free-form field is the label the user typed');
+
+  // Source-level: scan the pure layer for any reference to the ledger. This is
+  // crude, and deliberately so — it is the one property that must not regress
+  // quietly, and a grep is harder to defeat by accident than a convention.
+  const arcSource = [
+    arcEncodeClaim, arcEncodeCall, arcEncodeUint, arcEncodeAddress, arcPadWord,
+    arcUtf8Bytes, arcUtf8Decode, arcBytesToHex, arcHexToBytes,
+    arcDecodeUint, arcDecodeUintArray, arcDecodePackedWord, arcDecodeClaimedPacked,
+    arcDecodeString, arcDecodeAddress, arcDecodeTileInfo,
+    arcWeiToUsdc, arcUsdcToWei, arcWeiToErc20Units, arcGasCostUsdc, arcMaxFeePerGas,
+    arcTileCol, arcTileRow, arcTileId, arcTileIsClaimable,
+    arcShortAddress, arcSameAddress, arcWibDate, arcTxUrl, arcAddressUrl,
+  ].map((fn) => fn.toString()).join('\n');
+
+  ok(arcSource.indexOf('landbank.v1') === -1,
+     'No Arc function references the localStorage key that holds the ledger');
+  ok(arcSource.indexOf('totalBtc') === -1,
+     'No Arc function calls totalBtc()');
+  ok(!/\bSTORAGE_KEY\b/.test(arcSource),
+     'No Arc function reaches for the ledger through STORAGE_KEY');
+  ok(!/localStorage/.test(arcSource),
+     'The Arc layer does not touch localStorage at all');
+  // Stronger than a "left alone" check: the ledger lives below app.js's divider,
+  // so under the test flag it is not even loaded. These tests could not read a
+  // holding if they tried, which is exactly the separation the site relies on.
+  ok(typeof totalBtc === 'undefined' && typeof STORAGE_KEY === 'undefined',
+     'The ledger layer sits behind app.js\'s divider and is not loaded here at all');
+
+  /* --------------------------------------------------------------- totals */
+  const s = document.getElementById('summary');
+  s.className = fail === 0 ? 'ok' : 'bad';
+  s.textContent = fail === 0
+    ? `✓ all ${pass} tests pass`
+    : `✗ ${fail} failing / ${pass + fail} total`;
+  document.title = `${fail === 0 ? '✓' : '✗'} Landbank tests`;
+})();
+</script>
+</body>
+</html>

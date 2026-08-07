@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bitcoin Landbank — how much of 21,000,000 is yours?</title>
+<meta name="description" content="Record every Bitcoin buy and watch your landbank grow against the only 21 million that will ever exist. Your data never leaves your browser.">
+<meta name="color-scheme" content="dark light">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗺️</text></svg>">
+<script>
+  /* Runs in <head>, before the stylesheet paints anything, so neither the site
+     chrome nor the theme ever flashes and swaps.
+
+     This is a standalone site. It owns its own theme key and answers to no
+     host page. */
+  (function () {
+    var root = document.documentElement;
+    var KEY = 'arcland-theme';
+    root.dataset.themeKey = KEY;
+
+    var saved = null;
+    try { saved = localStorage.getItem(KEY); } catch (e) {}   // private mode throws
+    if (saved !== 'light' && saved !== 'dark') {
+      saved = (window.matchMedia &&
+               window.matchMedia('(prefers-color-scheme: light)').matches)
+        ? 'light' : 'dark';
+    }
+    root.setAttribute('data-theme', saved);
+  })();
+</script>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="wrap topbar__inner">
+    <span class="brand">🗺️ <strong>Bitcoin Landbank</strong></span>
+    <span class="topbar__right">
+      <span class="topbar__note">Your data stays in this browser. Nothing is uploaded.</span>
+      <button id="theme-toggle" class="btn btn--ghost" type="button"
+              aria-label="Switch between light and dark theme">☀ LIGHT</button>
+    </span>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <section class="hero">
+    <h1>There will only ever be <span class="hl">21,000,000</span>.</h1>
+    <p class="lede">
+      Bitcoin is digital property, and the map was drawn once. Every time you buy,
+      you fence off a piece of it that nobody can print more of. Record your buys
+      below and see exactly how much of the map is yours.
+    </p>
+  </section>
+
+  <div id="flash" class="flash" hidden role="status"></div>
+  <div id="storage-warning" class="flash is-error" hidden>
+    This browser is blocking storage, so entries will vanish on refresh. Use Backup to keep them.
+  </div>
+
+  <!-- ============================================================ ledger -->
+  <section class="panel" aria-labelledby="h-record">
+    <h2 id="h-record">Record a buy</h2>
+
+    <div id="sample-banner" class="banner" hidden>
+      <strong>This is sample data</strong> so the page has something to show.
+      Hit <em>Start fresh</em> — or just add your first buy, and the sample disappears.
+    </div>
+
+    <form id="buy-form" class="buy-form" autocomplete="off">
+      <div class="field">
+        <label for="buy-date">Date <span class="tz">WIB</span></label>
+        <input type="date" id="buy-date" required>
+      </div>
+      <div class="field field--amount">
+        <label for="buy-amount">Amount</label>
+        <div class="combo">
+          <input type="number" id="buy-amount" step="any" min="0" placeholder="0.01" required>
+          <select id="buy-unit" aria-label="Unit">
+            <option value="btc">BTC</option>
+            <option value="sats">sats</option>
+          </select>
+        </div>
+      </div>
+      <div class="field field--note">
+        <label for="buy-note">Note <span class="opt">optional</span></label>
+        <input type="text" id="buy-note" maxlength="120" placeholder="payday stack">
+      </div>
+      <button type="submit" class="btn btn--primary">Claim it</button>
+    </form>
+
+    <div class="quick">
+      <span>Quick:</span>
+      <button class="chip" data-quick="0.001">0.001</button>
+      <button class="chip" data-quick="0.005">0.005</button>
+      <button class="chip" data-quick="0.01">0.01</button>
+      <button class="chip" data-quick="0.05">0.05</button>
+      <button class="chip" data-quick="0.1">0.1</button>
+    </div>
+
+    <div class="ledger-head">
+      <h3>Your ledger <span id="ledger-count" class="muted"></span></h3>
+      <div class="ledger-actions">
+        <button id="backup" class="btn btn--ghost">Backup</button>
+        <label class="btn btn--ghost" for="restore">Restore</label>
+        <input type="file" id="restore" accept="application/json,.json" hidden>
+        <button id="start-fresh" class="btn btn--ghost btn--danger">Start fresh</button>
+      </div>
+    </div>
+
+    <div class="table-scroll">
+      <table class="ledger">
+        <thead>
+          <tr><th>Date</th><th class="num">BTC</th><th class="num">sats</th><th>Note</th><th></th></tr>
+        </thead>
+        <tbody id="ledger-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============================================================= stats -->
+  <section class="panel" aria-labelledby="h-holdings">
+    <h2 id="h-holdings">Your landbank</h2>
+
+    <div class="total">
+      <div class="total__btc"><span id="stat-btc">0</span> <span class="unit">BTC</span></div>
+      <div class="total__sats" id="stat-sats">0 sats</div>
+    </div>
+
+    <div class="tier">
+      <div class="tier__badge"><span id="tier-icon">🦠</span></div>
+      <div class="tier__body">
+        <div class="tier__name" id="tier-name">Plankton</div>
+        <div class="tier__blurb" id="tier-blurb"></div>
+        <div class="bar"><div class="bar__fill" id="tier-bar"></div></div>
+        <div class="tier__next muted" id="tier-next"></div>
+      </div>
+    </div>
+
+    <ul class="badges" id="badges"></ul>
+
+    <div class="stats">
+      <div class="stat stat--hero">
+        <div class="stat__label">Your share of the world's Bitcoin</div>
+        <div class="stat__value" id="stat-fairshare">—</div>
+        <div class="stat__sub" id="stat-fairshare-sub"></div>
+      </div>
+      <div class="stat stat--hero">
+        <div class="stat__label">People who could ever match you</div>
+        <div class="stat__value" id="stat-owners">—</div>
+        <div class="stat__sub" id="stat-owners-sub"></div>
+      </div>
+      <div class="stat">
+        <div class="stat__label">Parcels owned</div>
+        <div class="stat__value" id="stat-parcels">—</div>
+        <div class="stat__sub" id="stat-parcels-sub"></div>
+      </div>
+      <div class="stat">
+        <div class="stat__label">Of total supply</div>
+        <div class="stat__value stat__value--small" id="stat-supply">—</div>
+        <div class="stat__sub" id="stat-supply-sub"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- =============================================================== map -->
+  <section class="panel" aria-labelledby="h-map">
+    <h2 id="h-map">Find your land</h2>
+    <p class="panel__lede">
+      Every tile is <strong>one Bitcoin</strong>, and every tile divides into
+      <strong>10 × 10 = 100 parcels of 0.01 BTC</strong>. Unlocked land burns orange;
+      locked land stays grey. There are 21,000,000 tiles in total and you are looking
+      at a handful of them — claim more and the territory spreads outward from home.
+    </p>
+
+    <div class="viewtabs" role="tablist" aria-label="Map view">
+      <button id="view-board" class="viewtab is-on" role="tab" aria-selected="true">Board</button>
+      <button id="view-globe" class="viewtab" role="tab" aria-selected="false">Globe</button>
+    </div>
+
+    <!-- ============================================ isometric board (default) -->
+    <div class="board" id="board-view">
+      <canvas id="iso-canvas" tabindex="0"
+              aria-label="Isometric board of Bitcoin blocks with your unlocked land in orange"></canvas>
+
+      <div class="hud hud--tl">
+        <div class="hud__clock" id="hud-clock">--:--:-- WIB</div>
+        <div class="hud__update" id="hud-update">LATEST UPDATE · fetching…</div>
+        <div class="persona">
+          <span class="persona__icon" id="hud-persona-icon">🦠</span>
+          <span class="persona__text">
+            <span class="persona__name" id="hud-persona-name">PLANKTON</span>
+            <span class="persona__sub" id="hud-persona-sub">LANDHOLDER · Lv.1</span>
+          </span>
+        </div>
+      </div>
+
+      <div class="hud hud--tr">
+        <div class="hud__btc"><span id="hud-btc">0</span><span class="hud__unit">BTC</span></div>
+        <div class="hud__sats" id="hud-sats">0 sats</div>
+      </div>
+
+      <div class="hud hud--br">
+        <div class="hud__row"><span class="hud__k">BTC / USD</span><span class="hud__v" id="hud-price">—</span></div>
+        <div class="hud__row"><span class="hud__k">MARKET VALUE</span><span class="hud__v hud__v--gold" id="hud-value">—</span></div>
+      </div>
+
+      <div class="hud hud--bl">
+        <div class="hud__unlocked" id="hud-unlocked"></div>
+        <div class="hud__inview" id="hud-inview"></div>
+      </div>
+
+      <div class="gauge">
+        <span class="gauge__label" id="hud-gauge-label">NEXT</span>
+        <span class="gauge__track"><span class="gauge__fill" id="hud-gauge-fill"></span></span>
+        <span class="gauge__val" id="hud-gauge-val">—</span>
+      </div>
+
+      <div class="tip" id="iso-tip" hidden role="tooltip"></div>
+
+      <!-- Claim progress on Arc. aria-live so a screen reader hears the result
+           of a transaction it cannot see happening. -->
+      <div class="arc-toast" id="arc-toast" hidden role="status" aria-live="polite"></div>
+    </div>
+
+    <ul class="legend" id="legend-land">
+      <li><span class="key key--full"></span><b>Unlocked</b> — a whole 1 BTC block</li>
+      <li><span class="key key--partial"></span><b>In progress</b> — gold border, dark centre:
+          the block you are filling, lit one 0.01 parcel at a time</li>
+      <li><span class="key key--locked"></span><b>Locked</b> — not yours yet</li>
+      <li class="legend__hint">Click a tile to walk there · hover a tile or the figure for details</li>
+    </ul>
+
+    <ul class="legend" id="legend-world" hidden>
+      <li><span class="key" style="background:hsl(205 42% 44%)"></span><b>Exchange / custody</b></li>
+      <li><span class="key" style="background:hsl(268 42% 44%)"></span><b>Fund or ETF</b></li>
+      <li><span class="key" style="background:hsl(355 42% 44%)"></span><b>Seized / recovered</b></li>
+      <li><span class="key" style="background:hsl(172 42% 44%)"></span><b>Unidentified</b></li>
+      <li><span class="key key--locked"></span><b>Everyone else</b> — including you</li>
+      <li><span class="key key--deed"></span><b>Claimed on Arc</b> — a deed on the map</li>
+      <li><span class="key key--deed-mine"></span><b>Your deed</b></li>
+      <li class="legend__hint">Click a coloured tile for that address · click open land to claim it on Arc
+          — a deed records a tile and an address, never anyone's holdings</li>
+    </ul>
+
+    <div class="board__bar">
+      <span class="viewtabs viewtabs--sm">
+        <button id="scale-land" class="viewtab is-on" aria-pressed="true">My land</button>
+        <button id="scale-world" class="viewtab" aria-pressed="false">All 21M</button>
+      </span>
+      <button id="iso-focus" class="btn btn--primary">Focus my land</button>
+      <span class="zoomer" id="iso-zoomer">
+        <button id="iso-zoom-out" class="btn btn--ghost" aria-label="Zoom out">−</button>
+        <span class="zoomer__label" id="iso-zoom-label">1/6</span>
+        <button id="iso-zoom-in" class="btn btn--ghost" aria-label="Zoom in">+</button>
+      </span>
+      <span class="globe__hint">click to walk · drag to pan · scroll to zoom</span>
+    </div>
+
+    <div class="whales">
+      <h3 class="whales__h">The ten largest addresses on earth</h3>
+      <p class="whales__lede">
+        The top 100 addresses hold <strong>3,087,162 BTC — 14.7% of everything that will ever
+        exist</strong>. Switch the board to <em>All 21M</em> to see them as territory. Most are
+        exchange or ETF custody wallets holding coins for millions of people, not one person's
+        stack — the map labels which is which.
+      </p>
+      <ol class="wl" id="whale-list"></ol>
+      <p class="whales__src">
+        Snapshot taken 4 Aug 2026 from
+        <a href="https://bitinfocharts.com/top-100-richest-bitcoin-addresses.html"
+           target="_blank" rel="noopener noreferrer">bitinfocharts</a>.
+        Balances move; this is a fixed picture, not a live feed.
+      </p>
+    </div>
+
+    <!-- ==================================================== globe (optional) -->
+    <p id="globe-error" class="flash is-error" hidden></p>
+
+    <div class="globe" id="globe-stage" hidden>
+      <canvas id="globe-canvas" tabindex="0"
+              aria-label="3D globe of the 21,000,000 Bitcoin supply with your land marked in gold"></canvas>
+      <div class="globe__hud" id="globe-hud"></div>
+    </div>
+
+    <div class="globe__bar" id="globe-controls" hidden>
+      <button id="globe-fly" class="btn btn--primary">Fly to my land</button>
+      <button id="globe-reset" class="btn btn--ghost">Back to orbit</button>
+      <span class="globe__hint">drag to spin · scroll to zoom · arrow keys work too</span>
+    </div>
+    <p class="map__found" id="globe-found" hidden>
+      🚩 Touchdown. Those gold squares are yours — every dim one around them belongs
+      to somebody else, or to nobody yet.
+    </p>
+
+    <!-- Flat fallback, shown only when WebGL2 is unavailable. -->
+    <div class="map" id="map-fallback" hidden>
+      <div class="map__stage" id="map-stage">
+        <svg id="map-svg" viewBox="0 0 100 100" role="img"
+             aria-label="Grid map of the Bitcoin supply with your holding highlighted"></svg>
+      </div>
+      <p class="map__caption" id="map-caption"></p>
+      <p class="map__found" id="map-found" hidden>🚩 That bright square is yours.</p>
+      <button id="map-run" class="btn btn--primary">Locate my land</button>
+    </div>
+  </section>
+
+  <section class="panel panel--quiet">
+    <h2>How the numbers work</h2>
+    <dl class="faq">
+      <dt>Where is my data stored?</dt>
+      <dd>In this browser only, under <code>localStorage</code>. There is no account, no
+          server, and no database — this page makes zero network requests after it loads.
+          That also means it is not synced: use <strong>Backup</strong> to move your ledger
+          to another device.</dd>
+      <dt>"Your share of the world's Bitcoin"</dt>
+      <dd>21,000,000 BTC divided by ~8.2 billion people is <strong>0.00256 BTC each</strong>.
+          The multiple is how many of those shares you hold.</dd>
+      <dt>"People who could ever match you"</dt>
+      <dd>21,000,000 divided by your stack. If everyone tried to own what you own, this is
+          where Bitcoin runs out — and everyone after that is too late, at any price.</dd>
+      <dt>How is the globe divided?</dt>
+      <dd>Its surface is a 5,000 × 4,200 grid — <strong>exactly 21,000,000</strong> squares,
+          one Bitcoin each. Every one of those splits into 10 × 10 = 100 parcels of 0.01 BTC,
+          giving 2,100,000,000 parcels in total. Zoom in far enough and the squares you see
+          <em>are</em> individual hundredths of a coin. Like any world map it is an
+          equirectangular projection, so squares near the poles are drawn narrower than
+          squares on the equator; your land sits on the equator, where there is no
+          distortion at all.</dd>
+      <dt>How is mined supply calculated?</dt>
+      <dd>From Bitcoin's own issuance schedule — 210,000 blocks per halving, starting at 50
+          BTC — extrapolated from a verified block height at 10 minutes per block. Nothing
+          is fetched, so nothing can break.</dd>
+      <dt>Is this financial advice?</dt>
+      <dd>No. It is a scale toy. It does not know or care what Bitcoin costs.</dd>
+    </dl>
+  </section>
+</main>
+
+<footer class="footer wrap">
+  <p>Bitcoin Landbank · no tracking, no accounts, no server · <a href="tests.html">math tests</a></p>
+</footer>
+
+<script src="whales.js"></script>
+<script src="app.js"></script>
+<script src="price.js"></script>
+<!-- arc.js before iso.js: the board's world view calls into the Arc helpers. -->
+<script src="arc.js"></script>
+<script src="iso.js"></script>
+<script src="globe.js"></script>
+</body>
+</html>
