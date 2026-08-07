@@ -170,7 +170,7 @@ cast wallet new .keystore arcdeploy
 
 # 2. fund it at https://faucet.circle.com  (select "Arc Testnet")
 
-# 3. deploy + verify on ArcScan
+# 3. deploy, hand admin to the owner's real wallet, verify on ArcScan
 script/deploy-testnet.sh            # price 0: a claim costs only gas
 script/deploy-testnet.sh 500000000000000000   # or 0.5 USDC, in 18-decimal wei
 
@@ -180,6 +180,16 @@ script/arc-live-checks.sh 0xYourContract
 
 Then paste the address into `ARC_CONTRACT` in `lim-landbank/website/arc.js` and run
 `lim-landbank/scripts/sync-bitcoin-land.sh`.
+
+**The deploy key does not keep control.** It is a throwaway keypair generated on the build
+machine, and because the deploy is non-interactive its keystore password sits in a local file.
+So the script calls `transferAdmin` immediately after deploying, handing `setPrice` and
+`withdraw` to the owner's real wallet (`ARC_ADMIN`, default
+`0x8E978e06156bB88d993C186C0A355f2AB5AFb969`), and asserts the handover took effect before
+continuing. The deploy key ends up with no authority over the contract at all.
+
+For **mainnet**, do not reuse that key: run `cast wallet new .keystore arcmain` and type a real
+password at the prompt.
 
 ## Network reference
 

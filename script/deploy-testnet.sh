@@ -28,6 +28,13 @@ KEYSTORE=".keystore/arcdeploy"
 PWFILE=".keystore/password.txt"
 PRICE="${1:-0}"
 
+# The deployer is a throwaway key generated on this machine, and its password
+# sits in a file because the deploy is non-interactive. It should therefore hold
+# no lasting authority over the contract. Immediately after deploying, admin is
+# handed to the owner's real wallet (Rabby), which is the only thing that can
+# afterwards call setPrice or withdraw.
+ADMIN="${ARC_ADMIN:-0x8E978e06156bB88d993C186C0A355f2AB5AFb969}"
+
 for f in "$KEYSTORE" "$PWFILE"; do
   [[ -f "$f" ]] || { echo "error: missing $f — create it with:" >&2
                      echo "  cast wallet new .keystore arcdeploy" >&2; exit 2; }
@@ -67,6 +74,28 @@ echo "$OUT"
 
 CONTRACT=$(echo "$OUT" | sed -n 's/^Deployed to: //p' | tr -d '[:space:]')
 [[ -n "$CONTRACT" ]] || { echo "error: could not parse the deployed address" >&2; exit 1; }
+
+# macOS ships bash 3.2, which has no ${var,,}. Lowercase via tr instead.
+lower() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
+
+# Hand over admin BEFORE anything else, so the throwaway deploy key holds
+# authority for as short a window as possible.
+if [[ -n "$ADMIN" && "$(lower "$ADMIN")" != "$(lower "$ADDR")" ]]; then
+  echo
+  echo "handing admin to $ADMIN ..."
+  cast send "$CONTRACT" "transferAdmin(address)" "$ADMIN" \
+    --rpc-url "$RPC" \
+    --keystore "$KEYSTORE" --password-file "$PWFILE" \
+    >/dev/null
+  NEW_ADMIN=$(cast call "$CONTRACT" "admin()(address)" --rpc-url "$RPC" | awk '{print $1}')
+  if [[ "$(lower "$NEW_ADMIN")" == "$(lower "$ADMIN")" ]]; then
+    echo "  admin is now $NEW_ADMIN"
+    echo "  the deploy key can no longer call setPrice or withdraw"
+  else
+    echo "error: admin is $NEW_ADMIN, expected $ADMIN" >&2
+    exit 1
+  fi
+fi
 
 echo
 echo "verifying on ArcScan (Blockscout) ..."
