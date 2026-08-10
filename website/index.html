@@ -37,6 +37,11 @@
     <span class="brand">🗺️ <strong>Arc Land Registry</strong></span>
     <span class="topbar__right">
       <span class="topbar__note">Your holdings stay in this browser. They are never uploaded.</span>
+      <button id="wallet-btn" class="btn btn--wallet" type="button" data-state="idle">
+        <span class="wallet-dot" aria-hidden="true"></span>
+        <span id="wallet-label">Connect wallet</span>
+        <span id="wallet-balance" class="wallet-bal"></span>
+      </button>
       <button id="theme-toggle" class="btn btn--ghost" type="button"
               aria-label="Switch between light and dark theme">☀ LIGHT</button>
     </span>
@@ -53,6 +58,58 @@
       below and see exactly how much of the map is yours.
     </p>
   </section>
+
+  <!-- Wallet picker. Populated from EIP-6963 announcements, so it lists the
+       wallets actually installed rather than a hardcoded set. -->
+  <div id="wallet-modal" class="modal" hidden>
+    <div class="modal__backdrop" data-close></div>
+    <div class="modal__panel" role="dialog" aria-modal="true" aria-labelledby="wallet-modal-title">
+      <div class="modal__head">
+        <h2 id="wallet-modal-title">Connect a wallet</h2>
+        <button class="modal__x" type="button" data-close aria-label="Close">×</button>
+      </div>
+      <div id="wallet-list" class="wallet-list"></div>
+      <div id="wallet-none" class="wallet-none" hidden>
+        <p>No wallet detected in this browser.</p>
+        <p class="muted">Install <a href="https://rabby.io" target="_blank" rel="noopener noreferrer">Rabby</a>
+           or <a href="https://metamask.io/download/" target="_blank" rel="noopener noreferrer">MetaMask</a>,
+           then reload this page.</p>
+      </div>
+      <p class="modal__note">
+        Connecting shares your wallet address with this page. It never asks for a
+        seed phrase, and your Bitcoin ledger is never sent anywhere.
+      </p>
+    </div>
+  </div>
+
+  <!-- Connected-wallet detail, shown when the button is clicked while connected. -->
+  <div id="account-modal" class="modal" hidden>
+    <div class="modal__backdrop" data-close></div>
+    <div class="modal__panel" role="dialog" aria-modal="true" aria-labelledby="account-modal-title">
+      <div class="modal__head">
+        <h2 id="account-modal-title">Wallet</h2>
+        <button class="modal__x" type="button" data-close aria-label="Close">×</button>
+      </div>
+      <table class="tip__tbl acct-tbl">
+        <tr><th>Address</th><td id="acct-address" class="tip__addr">—</td></tr>
+        <tr><th>Network</th><td id="acct-network">—</td></tr>
+        <tr><th>Balance</th><td id="acct-balance">—</td></tr>
+        <tr><th>Your deeds</th><td id="acct-deeds">—</td></tr>
+      </table>
+      <div id="acct-wrongnet" class="banner" hidden>
+        This wallet is on the wrong network.
+        <button id="acct-switch" class="btn btn--primary btn--sm" type="button">Switch to Arc Testnet</button>
+      </div>
+      <div class="acct-actions">
+        <a id="acct-explorer" class="btn btn--ghost" target="_blank" rel="noopener noreferrer">View on ArcScan ↗</a>
+        <button id="acct-disconnect" class="btn btn--ghost btn--danger" type="button">Disconnect</button>
+      </div>
+      <p class="modal__note">
+        Disconnecting only forgets the wallet on this page. To revoke access
+        entirely, remove this site in your wallet's own connection settings.
+      </p>
+    </div>
+  </div>
 
   <div id="flash" class="flash" hidden role="status"></div>
   <div id="storage-warning" class="flash is-error" hidden>

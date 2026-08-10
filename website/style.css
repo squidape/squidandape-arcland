@@ -527,6 +527,65 @@ input:focus, select:focus, button:focus-visible, label.btn:focus-within {
 .tip__tbl td { text-align: right; padding: 2px 0; font-variant-numeric: tabular-nums; }
 .tip__empty { text-align: center !important; color: var(--muted); padding: 8px 0 !important; }
 
+/* ------------------------------------------------------------ wallet button */
+
+/* Three states, and the dot carries the meaning so it reads at a glance without
+   depending on colour alone: hollow = not connected, amber = wrong network,
+   green = live. */
+.btn--wallet {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 12px; letter-spacing: .04em; padding: 6px 12px;
+  font-variant-numeric: tabular-nums;
+}
+.wallet-dot {
+  width: 7px; height: 7px; border-radius: 50%; flex: none;
+  border: 1.5px solid var(--muted); background: transparent;
+}
+.btn--wallet[data-state="on"]   .wallet-dot { background: var(--green); border-color: var(--green); }
+.btn--wallet[data-state="warn"] .wallet-dot { background: var(--gold-solid); border-color: var(--gold-solid); }
+.btn--wallet[data-state="warn"] { border-color: var(--gold-dim); color: var(--gold); }
+.wallet-bal { color: var(--muted); font-size: 11px; }
+.btn--wallet[data-state="idle"] .wallet-bal { display: none; }
+
+/* ------------------------------------------------------------------- modal */
+
+.modal { position: fixed; inset: 0; z-index: 60; display: flex;
+         align-items: center; justify-content: center; padding: 20px; }
+.modal[hidden] { display: none !important; }
+.modal__backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.55); }
+.modal__panel {
+  position: relative; width: 100%; max-width: 380px;
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 20px;
+  box-shadow: var(--tip-shadow);
+}
+.modal__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.modal__head h2 { margin: 0; font-size: 16px; }
+.modal__x {
+  background: transparent; border: 0; color: var(--muted);
+  font-size: 22px; line-height: 1; cursor: pointer; padding: 0 4px;
+}
+.modal__x:hover { color: var(--text); }
+.modal__note { margin: 14px 0 0; font-size: 11px; color: var(--muted); line-height: 1.5; }
+
+.wallet-list { display: flex; flex-direction: column; gap: 8px; }
+.wallet-row {
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  padding: 11px 13px; cursor: pointer; text-align: left;
+  background: var(--panel-2); border: 1px solid var(--line);
+  border-radius: 9px; color: var(--text); font-size: 13px; font-weight: 600;
+}
+.wallet-row:hover { border-color: var(--gold-dim); }
+.wallet-row img { width: 26px; height: 26px; border-radius: 6px; flex: none; }
+.wallet-row .rdns { margin-left: auto; font-size: 10px; color: var(--muted); font-weight: 400; }
+.wallet-none { text-align: center; padding: 10px 0; font-size: 13px; }
+.wallet-none p { margin: 0 0 6px; }
+
+.acct-tbl { margin-bottom: 14px; }
+.acct-actions { display: flex; gap: 8px; }
+.acct-actions .btn { flex: 1; text-align: center; font-size: 12px; }
+.btn--sm { padding: 4px 10px; font-size: 11px; }
+
 /* Claim progress. Sits over the board, bottom-centre, out of the HUD's way. */
 .arc-toast {
   position: absolute; z-index: 6; left: 50%; bottom: 14px;

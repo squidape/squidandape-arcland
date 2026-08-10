@@ -379,6 +379,67 @@ function arcWibDate(unixSeconds) {
 function arcTxUrl(hash) { return ARC_EXPLORER + '/tx/' + hash; }
 function arcAddressUrl(addr) { return ARC_EXPLORER + '/address/' + addr; }
 
+/* ------------------------------------------------- wallet discovery (pure) */
+
+/**
+ * Validate one EIP-6963 `announceProvider` record.
+ *
+ * Any page script can fire this event, so a record is untrusted input: it is
+ * only usable if it carries a real provider object and the identifying fields
+ * the picker will display. An icon must be a data: URI — a remote URL would
+ * both leak a request on page load and let a hostile announcement point at
+ * anything.
+ */
+function arcIsValidWalletRecord(detail) {
+  if (!detail || typeof detail !== 'object') return false;
+  const info = detail.info;
+  const provider = detail.provider;
+  if (!info || typeof info !== 'object') return false;
+  if (!provider || typeof provider.request !== 'function') return false;
+  if (typeof info.uuid !== 'string' || !info.uuid) return false;
+  if (typeof info.rdns !== 'string' || !info.rdns) return false;
+  if (typeof info.name !== 'string' || !info.name) return false;
+  if (info.icon != null && !/^data:image\//i.test(String(info.icon))) return false;
+  return true;
+}
+
+/**
+ * Merge an announcement into the known list, keyed by rdns.
+ *
+ * Wallets re-announce whenever the page asks, so the same wallet arrives many
+ * times and must not stack up in the picker. rdns is the stable identity;
+ * uuid is regenerated per page load and is useless for dedupe.
+ */
+function arcMergeWallet(list, detail) {
+  if (!arcIsValidWalletRecord(detail)) return list;
+  const out = list.slice();
+  const at = out.findIndex((w) => w.info.rdns === detail.info.rdns);
+  if (at >= 0) out[at] = detail; else out.push(detail);
+  return out;
+}
+
+/** What the connect button should say, given the current state. */
+function arcConnectLabel(state) {
+  const s = state || {};
+  if (!s.account) return 'Connect wallet';
+  if (!s.chainOk) return 'Wrong network';
+  return arcShortAddress(s.account);
+}
+
+/** Which visual state that button is in: 'idle' | 'warn' | 'on'. */
+function arcConnectState(state) {
+  const s = state || {};
+  if (!s.account) return 'idle';
+  if (!s.chainOk) return 'warn';
+  return 'on';
+}
+
+/** '$1.00' style balance for the connected wallet, from 18-decimal wei. */
+function arcBalanceLabel(wei) {
+  if (wei == null) return '—';
+  return formatUsd(arcWeiToUsdc(wei));
+}
+
 /* ============================================================================
  * Network layer — not covered by tests.html
  * ==========================================================================*/
@@ -395,8 +456,14 @@ const A = {
   deployed: !!ARC_CONTRACT,
   account: null,
   chainOk: false,
+  wallets: [],      // EIP-6963 announcements, deduped by rdns
+  selected: null,   // the announcement the user picked
+  balanceWei: null, // native USDC of the connected account
   timer: 0,
 };
+
+/** Remembers which wallet was used, so a return visit skips the picker. */
+const ARC_WALLET_KEY = 'arcland.wallet';
 const listeners = [];
 
 function announce() { listeners.forEach((fn) => { try { fn(snapshot()); } catch (e) {} }); }
@@ -413,6 +480,10 @@ function snapshot() {
     deployed: A.deployed,
     account: A.account,
     chainOk: A.chainOk,
+    wallets: A.wallets.map((w) => ({ name: w.info.name, rdns: w.info.rdns, icon: w.info.icon })),
+    selected: A.selected ? A.selected.info.rdns : null,
+    balanceWei: A.balanceWei,
+    balanceLabel: arcBalanceLabel(A.balanceWei),
   };
 }
 
@@ -494,7 +565,36 @@ async function tileDetail(tileId) {
 
 /* ------------------------------------------------------------ wallet layer */
 
-function provider() { return typeof window !== 'undefined' ? window.ethereum : null; }
+/**
+ * EIP-6963 wallet discovery.
+ *
+ * The legacy way to find a wallet is `window.ethereum`, but that is a single
+ * slot: with both Rabby and MetaMask installed they race for it and the user
+ * gets whichever won, with no say. EIP-6963 fixes that — the page asks, and
+ * every installed wallet announces itself with a name, an icon and its own
+ * provider object, so the user can pick.
+ *
+ * Discovery is not a one-shot: extensions can announce late (or after being
+ * enabled), so the listener stays attached and the page re-asks on load.
+ */
+function discoverWallets() {
+  if (typeof window === 'undefined') return;
+  window.addEventListener('eip6963:announceProvider', (event) => {
+    const before = A.wallets.length;
+    A.wallets = arcMergeWallet(A.wallets, event.detail);
+    if (A.wallets.length !== before) announce();
+  });
+  window.dispatchEvent(new Event('eip6963:requestProvider'));
+}
+
+/**
+ * The provider to talk to: whichever wallet the user picked, else the legacy
+ * injected one so wallets that never adopted EIP-6963 still work.
+ */
+function provider() {
+  if (A.selected && A.selected.provider) return A.selected.provider;
+  return typeof window !== 'undefined' ? window.ethereum : null;
+}
 
 const ARC_CHAIN_PARAMS = {
   chainId: ARC_CHAIN_ID_HEX,
@@ -526,18 +626,80 @@ async function ensureChain() {
   return String(after).toLowerCase() === ARC_CHAIN_ID_HEX;
 }
 
-async function connect() {
+/**
+ * Connect a wallet.
+ *
+ * `rdns` picks a specific announced wallet; without it, a single announced
+ * wallet is used directly and several means the caller should show the picker
+ * rather than choosing for the user.
+ */
+async function connect(rdns) {
+  if (rdns) {
+    const found = A.wallets.find((w) => w.info.rdns === rdns);
+    if (!found) return { ok: false, reason: 'unknown-wallet' };
+    A.selected = found;
+  } else if (!A.selected) {
+    if (A.wallets.length === 1) A.selected = A.wallets[0];
+    else if (A.wallets.length > 1) return { ok: false, reason: 'choose-wallet', wallets: A.wallets };
+  }
+
   const eth = provider();
   if (!eth) return { ok: false, reason: 'no-wallet' };
   try {
     const accounts = await eth.request({ method: 'eth_requestAccounts' });
     A.account = (accounts && accounts[0]) || null;
     A.chainOk = await ensureChain();
+    bindProviderEvents(eth);
+    await refreshBalance();
+    if (A.selected) {
+      try { localStorage.setItem(ARC_WALLET_KEY, A.selected.info.rdns); } catch (e) {}
+    }
     announce();
     return { ok: !!A.account && A.chainOk, account: A.account, chainOk: A.chainOk };
   } catch (e) {
     return { ok: false, reason: e && e.code === 4001 ? 'rejected' : 'error', error: e };
   }
+}
+
+/**
+ * Forget the wallet locally.
+ *
+ * There is no way to revoke a connection from the page — EIP-1193 has no
+ * disconnect — so this clears our own state and the user revokes in the wallet
+ * itself if they want to. Saying "disconnected" while the wallet still holds
+ * the grant would be a lie, so the UI says what actually happened.
+ */
+function disconnect() {
+  A.account = null;
+  A.chainOk = false;
+  A.balanceWei = null;
+  A.selected = null;
+  try { localStorage.removeItem(ARC_WALLET_KEY); } catch (e) {}
+  announce();
+}
+
+/** Native USDC balance of the connected account, 18-decimal wei. */
+async function refreshBalance() {
+  if (!A.account) { A.balanceWei = null; return; }
+  const hex = await rpc('eth_getBalance', [A.account, 'latest']);
+  A.balanceWei = hex == null ? null : BigInt(hex);
+}
+
+let boundProvider = null;
+function bindProviderEvents(eth) {
+  if (!eth || !eth.on || boundProvider === eth) return;
+  boundProvider = eth;
+  eth.on('accountsChanged', async (accounts) => {
+    A.account = (accounts && accounts[0]) || null;
+    if (!A.account) { A.chainOk = false; A.balanceWei = null; }
+    else await refreshBalance();
+    announce();
+  });
+  eth.on('chainChanged', async (id) => {
+    A.chainOk = String(id).toLowerCase() === ARC_CHAIN_ID_HEX;
+    await refreshBalance();
+    announce();
+  });
 }
 
 /** What a claim will cost right now, in USDC, for showing before signing. */
@@ -626,6 +788,8 @@ window.Arc = {
   onUpdate: (fn) => { listeners.push(fn); },
   refresh: refresh,
   connect: connect,
+  disconnect: disconnect,
+  ensureChain: ensureChain,
   claim: claim,
   quote: quote,
   tileDetail: tileDetail,
@@ -636,23 +800,48 @@ window.Arc = {
   chainId: ARC_CHAIN_ID,
 };
 
-// Pick up an already-authorised wallet without prompting.
-(function () {
-  const eth = provider();
-  if (!eth || !eth.request) return;
-  eth.request({ method: 'eth_accounts' }).then((accounts) => {
-    if (accounts && accounts.length) { A.account = accounts[0]; announce(); }
-  }).catch(() => {});
-  if (eth.on) {
-    eth.on('accountsChanged', (accounts) => {
-      A.account = (accounts && accounts[0]) || null;
-      announce();
-    });
-    eth.on('chainChanged', () => {
-      A.chainOk = false;
-      announce();
-    });
-  }
+discoverWallets();
+
+/**
+ * Silently restore a previous session.
+ *
+ * `eth_accounts` never prompts — it returns an account only where the user has
+ * already granted this origin, so a returning visitor is reconnected without a
+ * popup, and a first-time visitor sees nothing at all.
+ *
+ * Announcements can arrive after this runs, so it retries briefly rather than
+ * assuming the wallet list is complete on the first tick.
+ */
+(function restoreSession() {
+  let tries = 0;
+  const attempt = async () => {
+    tries++;
+    let remembered = null;
+    try { remembered = localStorage.getItem(ARC_WALLET_KEY); } catch (e) {}
+    if (remembered && !A.selected) {
+      const found = A.wallets.find((w) => w.info.rdns === remembered);
+      if (found) A.selected = found;
+    }
+    const eth = provider();
+    if (!eth || !eth.request) {
+      if (tries < 6) setTimeout(attempt, 300);
+      return;
+    }
+    try {
+      const accounts = await eth.request({ method: 'eth_accounts' });
+      if (accounts && accounts.length) {
+        A.account = accounts[0];
+        const id = await eth.request({ method: 'eth_chainId' });
+        A.chainOk = String(id).toLowerCase() === ARC_CHAIN_ID_HEX;
+        bindProviderEvents(eth);
+        await refreshBalance();
+        announce();
+        return;
+      }
+    } catch (e) { /* not authorised yet — that is the normal first visit */ }
+    if (tries < 6) setTimeout(attempt, 300);
+  };
+  attempt();
 })();
 
 refresh();

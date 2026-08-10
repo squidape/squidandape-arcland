@@ -657,7 +657,122 @@ function init() {
   });
 
   initTheme();
+  initWallet();
   render();
+}
+
+/* --------------------------------------------------------------- wallet UI */
+
+function openModal(sel) { const m = $(sel); if (m) m.hidden = false; }
+function closeModal(sel) { const m = $(sel); if (m) m.hidden = true; }
+
+/** Paint the topbar button and, if open, the account panel. */
+function renderWallet() {
+  if (!window.Arc) return;
+  const s = window.Arc.get();
+  const btn = $('#wallet-btn');
+  if (btn) {
+    btn.dataset.state = arcConnectState(s);
+    $('#wallet-label').textContent = arcConnectLabel(s);
+    $('#wallet-balance').textContent = s.account && s.chainOk ? s.balanceLabel : '';
+    btn.title = s.account
+      ? `${s.account}${s.chainOk ? '' : ' — wrong network'}`
+      : 'Connect a wallet to claim land on Arc';
+  }
+
+  const modal = $('#account-modal');
+  if (modal && !modal.hidden && s.account) {
+    $('#acct-address').textContent = arcShortAddress(s.account);
+    $('#acct-network').textContent = s.chainOk ? 'Arc Testnet' : 'Wrong network';
+    $('#acct-balance').textContent = s.chainOk ? s.balanceLabel : '—';
+    const mine = Object.keys(s.tiles).filter((t) => arcSameAddress(s.tiles[t].owner, s.account));
+    $('#acct-deeds').textContent = mine.length ? `${mine.length} (tile ${mine.join(', ')})` : 'none yet';
+    $('#acct-wrongnet').hidden = s.chainOk;
+    $('#acct-explorer').href = arcAddressUrl(s.account);
+  }
+}
+
+/** Build the picker from whatever EIP-6963 announced. */
+function renderWalletList() {
+  const list = $('#wallet-list');
+  const none = $('#wallet-none');
+  if (!list || !window.Arc) return;
+  const wallets = window.Arc.get().wallets;
+
+  list.innerHTML = '';
+  // A legacy injected provider that never announced itself still deserves a row,
+  // or wallets predating EIP-6963 would look uninstalled.
+  const legacyOnly = !wallets.length && typeof window.ethereum !== 'undefined';
+  none.hidden = wallets.length > 0 || legacyOnly;
+
+  const rows = wallets.length ? wallets
+    : legacyOnly ? [{ name: 'Injected wallet', rdns: '', icon: null }] : [];
+
+  rows.forEach((w) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'wallet-row';
+    // Wallet name/icon come from an untrusted page event, so both are escaped.
+    // arcIsValidWalletRecord already refused any icon that is not a data: URI.
+    b.innerHTML =
+      (w.icon ? `<img src="${escapeHtml(w.icon)}" alt="">` : '<span class="wallet-dot"></span>') +
+      `<span>${escapeHtml(w.name)}</span>` +
+      (w.rdns ? `<span class="rdns">${escapeHtml(w.rdns)}</span>` : '');
+    b.addEventListener('click', () => pickWallet(w.rdns));
+    list.appendChild(b);
+  });
+}
+
+async function pickWallet(rdns) {
+  closeModal('#wallet-modal');
+  const res = await window.Arc.connect(rdns || undefined);
+  if (res.ok) {
+    flash('Wallet connected.');
+  } else if (res.reason === 'rejected') {
+    flash('Connection cancelled.');
+  } else if (res.reason === 'no-wallet') {
+    flash('No wallet found in this browser.');
+  } else {
+    flash('Could not connect to that wallet.');
+  }
+  renderWallet();
+}
+
+function initWallet() {
+  const btn = $('#wallet-btn');
+  if (!btn || !window.Arc) return;
+
+  btn.addEventListener('click', async () => {
+    const s = window.Arc.get();
+    if (s.account) { renderWallet(); openModal('#account-modal'); return; }
+    // One announced wallet is not a choice worth making the user click through.
+    if (s.wallets.length === 1) { await pickWallet(s.wallets[0].rdns); return; }
+    renderWalletList();
+    openModal('#wallet-modal');
+  });
+
+  document.querySelectorAll('[data-close]').forEach((el) => {
+    el.addEventListener('click', () => {
+      closeModal('#wallet-modal'); closeModal('#account-modal');
+    });
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { closeModal('#wallet-modal'); closeModal('#account-modal'); }
+  });
+
+  $('#acct-disconnect').addEventListener('click', () => {
+    window.Arc.disconnect();
+    closeModal('#account-modal');
+    flash('Wallet forgotten on this page.');
+    renderWallet();
+  });
+  $('#acct-switch').addEventListener('click', async () => {
+    await window.Arc.ensureChain();
+    renderWallet();
+  });
+
+  window.Arc.onUpdate(() => { renderWallet(); renderWalletList(); });
+  renderWallet();
 }
 
 if (document.readyState === 'loading') {

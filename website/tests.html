@@ -902,6 +902,62 @@
   ok(arcWibDate(0) === '' && arcWibDate(null) === '',
      'A missing timestamp renders empty, never 1970');
 
+  /* ------------------------------------------- Arc — wallet discovery */
+  group('Arc — EIP-6963 wallet discovery');
+
+  const fakeProvider = { request: () => {} };
+  const rabby = { info: { uuid: 'u1', rdns: 'io.rabby', name: 'Rabby', icon: 'data:image/svg+xml,<svg/>' },
+                  provider: fakeProvider };
+  const mm    = { info: { uuid: 'u2', rdns: 'io.metamask', name: 'MetaMask', icon: 'data:image/png;base64,AA' },
+                  provider: fakeProvider };
+
+  ok(arcIsValidWalletRecord(rabby), 'A well-formed announcement is accepted');
+  ok(!arcIsValidWalletRecord(null), 'Null is refused');
+  ok(!arcIsValidWalletRecord({ info: rabby.info }), 'An announcement with no provider is refused');
+  ok(!arcIsValidWalletRecord({ info: rabby.info, provider: {} }),
+     'A provider without .request() is refused — it could not be called anyway');
+  ok(!arcIsValidWalletRecord({ info: { uuid: 'x', rdns: '', name: 'X' }, provider: fakeProvider }),
+     'An empty rdns is refused — it is the dedupe key');
+  // Any script on the page can fire this event, so a remote icon URL would leak
+  // a request and let a hostile announcement point anywhere.
+  ok(!arcIsValidWalletRecord({ info: { uuid: 'x', rdns: 'a.b', name: 'X', icon: 'https://evil.example/i.png' },
+                               provider: fakeProvider }),
+     'A remote icon URL is refused; only data: URIs are allowed');
+  ok(arcIsValidWalletRecord({ info: { uuid: 'x', rdns: 'a.b', name: 'X' }, provider: fakeProvider }),
+     'A missing icon is fine — the picker falls back to a dot');
+
+  let wl = [];
+  wl = arcMergeWallet(wl, rabby);
+  wl = arcMergeWallet(wl, mm);
+  ok(wl.length === 2, 'Two different wallets both appear', wl.length);
+  // Wallets re-announce every time the page asks, which is what would otherwise
+  // stack duplicates in the picker.
+  wl = arcMergeWallet(wl, rabby);
+  ok(wl.length === 2, 'Re-announcing does not duplicate a wallet', wl.length);
+  const renamed = { info: { uuid: 'u9', rdns: 'io.rabby', name: 'Rabby Wallet' }, provider: fakeProvider };
+  wl = arcMergeWallet(wl, renamed);
+  ok(wl.length === 2 && wl[0].info.name === 'Rabby Wallet',
+     'A re-announcement updates in place, keyed by rdns not uuid');
+  wl = arcMergeWallet(wl, { info: { rdns: '' }, provider: null });
+  ok(wl.length === 2, 'An invalid announcement is dropped rather than added');
+
+  /* --------------------------------------- Arc — connect button state */
+  group('Arc — connect button state');
+
+  ok(arcConnectLabel({}) === 'Connect wallet', 'No wallet: the button invites a connection');
+  ok(arcConnectState({}) === 'idle', 'No wallet: idle');
+  ok(arcConnectLabel({ account: '0x1234567890abcdef1234567890abcdef12345678', chainOk: false }) === 'Wrong network',
+     'Connected but on the wrong chain says so, rather than showing an address that cannot act');
+  ok(arcConnectState({ account: '0xabc', chainOk: false }) === 'warn', 'Wrong chain: warn');
+  ok(arcConnectLabel({ account: '0x1234567890abcdef1234567890abcdef12345678', chainOk: true }) === '0x1234…5678',
+     'Connected on Arc shows the shortened address');
+  ok(arcConnectState({ account: '0xabc', chainOk: true }) === 'on', 'Connected on Arc: on');
+
+  ok(arcBalanceLabel(null) === '—', 'An unknown balance is a dash, never $0.00');
+  ok(arcBalanceLabel(1000000000000000000n) === '$1.00', '1e18 wei shows as $1.00', arcBalanceLabel(1000000000000000000n));
+  ok(arcBalanceLabel(0n) === '$0.0000', 'A genuinely zero balance is shown as zero, not a dash',
+     arcBalanceLabel(0n));
+
   /* ----------------------------------------- Arc — deed state and palette */
   group('Arc — deed state and the deed palette');
 
