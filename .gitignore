@@ -34,3 +34,7 @@ password.txt
 # changed with the rename, older backups keep the old one.
 arcland-*.json
 landbank-*.json
+
+# Grant application working drafts. Contains personal contact details and a
+# payout address; this repo is public, so it stays local.
+grant/
