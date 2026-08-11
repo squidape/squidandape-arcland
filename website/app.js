@@ -658,7 +658,179 @@ function init() {
 
   initTheme();
   initWallet();
+  initSections();
+  initStables();
   render();
+}
+
+/* ------------------------------------------------------- top-level sections */
+
+const SECTIONS = [
+  { id: 'land', btn: '#sec-land', view: '#view-land' },
+  { id: 'stables', btn: '#sec-stables', view: '#view-stables' },
+];
+
+/**
+ * Show one top-level section.
+ *
+ * The canvases size themselves to their container, so a board that was hidden
+ * when it first drew comes back at zero size — `onShow` re-measures. Same
+ * problem the Board/Globe switch already solves.
+ */
+function showSection(id, push) {
+  const found = SECTIONS.some((s) => s.id === id) ? id : 'land';
+  SECTIONS.forEach((s) => {
+    const on = s.id === found;
+    const view = $(s.view);
+    const btn = $(s.btn);
+    if (view) view.hidden = !on;
+    if (btn) { btn.classList.toggle('is-on', on); btn.setAttribute('aria-pressed', String(on)); }
+  });
+  if (found === 'land' && window.Iso && window.Iso.onShow) window.Iso.onShow();
+  if (push && location.hash !== '#/' + found) history.replaceState(null, '', '#/' + found);
+}
+
+function sectionFromHash() {
+  const m = /^#\/(\w+)/.exec(location.hash || '');
+  return m ? m[1] : 'land';
+}
+
+function initSections() {
+  SECTIONS.forEach((s) => {
+    const btn = $(s.btn);
+    if (btn) btn.addEventListener('click', () => showSection(s.id, true));
+  });
+  // Hash routing so the stablecoin view can be linked to directly.
+  window.addEventListener('hashchange', () => showSection(sectionFromHash(), false));
+  showSection(sectionFromHash(), false);
+}
+
+/* ------------------------------------------------------- stablecoin tracker */
+
+/** A short provenance + staleness line, so no figure is unattributed. */
+function stablesSourceLine(s) {
+  if (!s.at) return 'Loading from Circle…';
+  const age = agoLabel(s.at);
+  return `via Circle · updated ${age}${s.failing ? ' · retrying' : ''}`;
+}
+
+function renderStables() {
+  if (!window.Stables) return;
+  const s = window.Stables.get();
+  const c = s.circle;
+  const m = s.market;
+
+  $('#stables-src').textContent = stablesSourceLine(s);
+
+  // --- On Arc -------------------------------------------------------------
+  const usdc = c && c.usdc;
+  const eurc = c && c.eurc;
+
+  $('#st-usdc-arc').textContent = usdc ? stableFormatExact(usdc.arc, '$') : '—';
+  $('#st-eurc-arc').textContent = eurc ? stableFormatExact(eurc.arc, '€') : '—';
+
+  const usdcRank = usdc && stableChainRank(usdc.chains, 'ARC');
+  const eurcRank = eurc && stableChainRank(eurc.chains, 'ARC');
+  $('#st-usdc-arc-sub').textContent = usdc
+    ? `${stableFormatPct(stableShareOfTotal(usdc.arc, usdc.total))} of all USDC` +
+      (usdcRank ? ` · #${usdcRank.rank} of ${usdcRank.of} chains` : '')
+    : '';
+  $('#st-eurc-arc-sub').textContent = eurc
+    ? `${stableFormatPct(stableShareOfTotal(eurc.arc, eurc.total))} of all EURC` +
+      (eurcRank ? ` · #${eurcRank.rank} of ${eurcRank.of} chains` : '')
+    : '';
+
+  $('#st-gas').textContent = s.gasUsdc == null ? '—' : formatUsd(s.gasUsdc);
+
+  // Peg. USDC is pegged to a dollar; EURC is pegged to a euro, so its target is
+  // the live EUR rate rather than 1 — quoting it against $1 would show a
+  // permanent 15% "depeg" that is really just the exchange rate.
+  if (m && m.usdc) {
+    const d = stablePegDelta(m.usdc.price, 1);
+    $('#st-peg').textContent = `USDC ${stableFormatPeg(d)}`;
+    $('#st-peg-sub').textContent = m.eurc
+      ? `$${m.usdc.price.toFixed(4)} · EURC $${m.eurc.price.toFixed(4)} (1 EUR)`
+      : `$${m.usdc.price.toFixed(4)} from its $1.00 peg`;
+  } else {
+    $('#st-peg').textContent = '—';
+    $('#st-peg-sub').textContent = '';
+  }
+
+  // --- Your balance -------------------------------------------------------
+  const arc = window.Arc ? window.Arc.get() : null;
+  const connected = !!(arc && arc.account);
+  $('#st-wallet-empty').hidden = connected;
+  $('#st-wallet-have').hidden = !connected;
+  if (connected) {
+    const bu = s.balances.usdc;
+    const be = s.balances.eurc;
+    $('#st-bal-usdc').textContent = bu == null ? '—' : stableFormatExact(bu, '$');
+    $('#st-bal-eurc').textContent = be == null ? '—' : stableFormatExact(be, '€');
+    $('#st-bal-usdc-sub').textContent =
+      bu != null && usdc ? `${stableFormatPct(stableShareOfTotal(bu, usdc.total))} of all USDC` : '';
+    $('#st-bal-eurc-sub').textContent =
+      be != null && m && m.eurc ? `≈ ${formatUsd(be * m.eurc.price)}` : '';
+    $('#st-bal-foot').textContent =
+      `Read from Arc for ${arcShortAddress(arc.account)}. Not stored, not uploaded.`;
+  }
+
+  // --- Live issuance ------------------------------------------------------
+  const feed = $('#st-feed');
+  if (!s.feed.length) {
+    feed.innerHTML = `<tr><td colspan="4" class="tip__empty">${
+      s.at ? 'No mints or burns in the last few thousand blocks.' : 'Loading recent activity…'}</td></tr>`;
+  } else {
+    // Every field here comes off the chain, so all of it is escaped even though
+    // the values are numeric or hex by construction.
+    feed.innerHTML = s.feed.map((r) => {
+      const url = r.tx ? `${window.Arc.explorer}/tx/${encodeURIComponent(r.tx)}` : null;
+      const who = escapeHtml(arcShortAddress(r.address));
+      return `<tr>
+        <td>${url ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${r.block}</a>` : r.block}</td>
+        <td><span class="flow flow--${r.kind === 'mint' ? 'mint' : 'burn'}">${
+          r.kind === 'mint' ? '+ MINT' : '− BURN'}</span></td>
+        <td class="num">${escapeHtml(stableFormatExact(r.amount, r.currency))} ${escapeHtml(r.symbol)}</td>
+        <td class="tip__addr">${who}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  // --- Where Arc sits -----------------------------------------------------
+  $('#st-usdc-total').textContent = usdc ? stableFormatBig(usdc.total, '$') : '—';
+  $('#st-eurc-total').textContent = eurc ? stableFormatBig(eurc.total, '€') : '—';
+  $('#st-usdc-total-sub').textContent = usdc ? `across ${usdc.chainCount} chains` : '';
+  $('#st-eurc-total-sub').textContent = eurc ? `across ${eurc.chainCount} chains` : '';
+
+  const chains = $('#st-chains');
+  if (!usdc || !usdc.chains.length) {
+    chains.innerHTML = `<tr><td colspan="4" class="tip__empty">${
+      s.at ? 'No chain data.' : 'Loading…'}</td></tr>`;
+  } else {
+    // Top chains plus Arc wherever it actually falls, so Arc is always visible
+    // without pretending it ranks higher than it does.
+    const top = usdc.chains.slice(0, 8);
+    const arcRow = usdc.chains.find((x) => x.chain === 'ARC');
+    const rows = top.some((x) => x.chain === 'ARC') || !arcRow ? top : top.concat([arcRow]);
+    chains.innerHTML = rows.map((x) => {
+      const pos = usdc.chains.indexOf(x) + 1;
+      const isArc = x.chain === 'ARC';
+      // Chain names come from Circle's API — untrusted input into the DOM.
+      return `<tr class="${isArc ? 'chain-arc' : ''}">
+        <td>${pos}</td>
+        <td>${escapeHtml(x.chain)}</td>
+        <td class="num">${escapeHtml(stableFormatBig(x.amount, '$'))}</td>
+        <td class="num">${escapeHtml(stableFormatPct(stableShareOfTotal(x.amount, usdc.total)))}</td>
+      </tr>`;
+    }).join('');
+  }
+}
+
+function initStables() {
+  if (!window.Stables) return;
+  window.Stables.onUpdate(renderStables);
+  // The balance panel depends on wallet state as well as feed state.
+  if (window.Arc) window.Arc.onUpdate(renderStables);
+  renderStables();
 }
 
 /* --------------------------------------------------------------- wallet UI */

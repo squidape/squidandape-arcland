@@ -17,7 +17,7 @@ open**, and this contract records who claimed which.
 | Chain | Arc Testnet (`5042002`) |
 | Address | [`0xaE6E1017427e437017202Ffa1A9854848c9BC56b`](https://testnet.arcscan.app/address/0xaE6E1017427e437017202Ffa1A9854848c9BC56b) — verified |
 | Front end | `website/` — the whole site, standalone, zero dependencies, no build step |
-| Tests | 56 local + 7 fork + 20 live-chain + 320 in-browser |
+| Tests | 56 local + 7 fork + 20 live-chain + 382 in-browser |
 
 ---
 
@@ -43,6 +43,84 @@ The separation is enforced, not merely intended:
   so there is provably no third field carrying a holding.
 
 ---
+
+## The stablecoin tracker
+
+The site has two sections. **LAND** is the Bitcoin supply map above. **STABLECOINS** tracks USDC
+and EURC — supply on Arc, your own balances, live issuance, and where Arc sits among the chains
+Circle issues on.
+
+The pairing is the point: a fixed supply of 21,000,000 next to an elastic one that is minted and
+burned continuously, on a chain where **the dollar is the gas**.
+
+### Where every number comes from
+
+| Panel | Source | Why that one |
+|---|---|---|
+| Supply on Arc, global totals, chain ranking | `api.circle.com/v1/stablecoins` | Circle's own published figures. Public, keyless, CORS-clean |
+| Peg, EUR rate | CoinGecko | price only; already this project's price fallback |
+| Your balance, live mint/burn, gas cost | Arc RPC | the chain is authoritative about these, and only these |
+
+**Supply is never read from the token contract, and that is deliberate.** On Arc Testnet the
+faucet mints on demand, so `totalSupply()` currently reports **212 billion USDC** and
+**2 trillion EURC**. Those are honest reads of a real contract and complete fiction as supply.
+The obvious implementation would have put fabricated numbers on the page.
+
+### No API keys, by necessity
+
+This is a static page with no backend. Any key in its JavaScript is published to everyone who
+loads it, so a source that requires one cannot be used safely here at all. All three sources are
+public and keyless — which was a selection criterion, not a happy accident.
+
+### `eth_getLogs` is bounded by a measured limit
+
+The live RPC serves **10,000 blocks**, refuses 50,000 with *"requested range too large"*, and
+rate-limits at 200,000. The issuance feed clamps to that ceiling in `stableLogRange`, using a
+constant — never a value a visitor can influence. Both mint and burn queries are filtered by
+topic **server-side**, because an unfiltered `Transfer` query over the same window returns
+~10,000 logs and would be pointless to ship to a browser.
+
+Most burns come from CCTP's `TokenMinterV2`, so they are bridge-outs rather than destruction —
+the UI says so instead of implying coins vanished.
+
+## Security
+
+The threat that matters here is injected script quietly shipping a wallet address, a balance or
+a signature request somewhere. There are no accounts and no secrets to steal, so the defence is
+shaped around that:
+
+- **`connect-src` is a closed allowlist** — the four Arc RPCs, `api.circle.com`,
+  `api.coingecko.com`, `www.okx.ac`. Nothing else is reachable even if an injection succeeds.
+  This is the load-bearing directive.
+- **`script-src` is strict.** The only inline script is the `<head>` theme boot, pinned by
+  **sha256 hash** rather than waved through with `'unsafe-inline'`.
+  **Editing that script means recomputing the hash** — the command is in `website/_headers`, and
+  a stale hash leaves the page in the wrong theme.
+- **`style-src` allows `'unsafe-inline'`**, which is a deliberate, narrower compromise: the whale
+  list colours each swatch by hue *and rank*, a per-row computed value that cannot be enumerated
+  as a class or hashed. Inline style is a far weaker vector than inline script, and with
+  `connect-src` closed there is nowhere for CSS-based exfiltration to send anything.
+- **`tests.html` has its own looser policy**, scoped to that path. Its runner is one large inline
+  script that grows with every assertion; hashing it would mean recomputing on every edit, and a
+  forgotten recompute fails as a page stuck on "running…" that reads like a broken test rather
+  than a broken header. It is a developer tool that renders no user input and holds no wallet.
+- Plus `nosniff`, `Referrer-Policy: no-referrer`, `frame-ancestors 'none'`, `object-src 'none'`,
+  `base-uri 'none'`, `form-action 'none'`, and a `Permissions-Policy` that turns off camera,
+  microphone, geolocation, payment and USB.
+
+In code rather than headers:
+
+- **Every external string is escaped before it reaches the DOM** — Circle's chain names and
+  EIP-6963 wallet names both flow into tables.
+- **Every number is validated at the parser, not the render site.** `NaN`, `Infinity`, negatives
+  and (for totals) zero are refused there, so the page cannot print `NaN%` or a healthy-looking
+  `0.00%` because an upstream hiccuped. A missing value renders as `—`.
+- **Wallet icons must be `data:` URIs.** A remote URL in an EIP-6963 announcement would leak a
+  request on page load and let a hostile announcement point anywhere; `arcIsValidWalletRecord`
+  refuses them.
+- **Balances are never stored or transmitted.** They are read from the chain and rendered. The
+  privacy-invariant test scans the source of every pure function in `arc.js` **and `stables.js`**
+  for the ledger key, `totalBtc` and `localStorage`.
 
 ## What we learned about Arc that the docs get wrong
 
@@ -161,7 +239,7 @@ interesting part of the project. Every Circle example assumes `npm install wagmi
 
 The encoder is not trusted on inspection. `tests.html` compares its output against calldata
 generated by `cast calldata`, byte for byte, for ASCII, empty, exactly-32-byte and
-emoji-containing labels. The whole site runs **320 in-browser assertions** with no runner.
+emoji-containing labels. The whole site runs **382 in-browser assertions** with no runner.
 
 ---
 

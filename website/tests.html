@@ -41,6 +41,7 @@
 <script src="price.js"></script>
 <!-- arc.js before iso.js: the board's world view calls into the Arc helpers. -->
 <script src="arc.js"></script>
+<script src="stables.js"></script>
 <script src="iso.js"></script>
 <script src="globe.js"></script>
 
@@ -998,6 +999,137 @@
      lum(isoPalette('light').deedMineEdge) < lum(isoPalette('light').deedMineTop),
      'Your own deed follows the same highlight/shadow flip');
 
+  /* ------------------------------------- Stablecoins — Circle's supply feed */
+  group('Stablecoins — Circle supply feed (real captured payload)');
+
+  // Trimmed verbatim from a live api.circle.com/v1/stablecoins response,
+  // 2026-08-11. Amounts arrive as STRINGS with up to 20 significant digits —
+  // more precision than a float64 holds — which is why nothing trusts them as
+  // numbers without going through stableNum().
+  const circleReal = { data: [
+    { name: 'Euro Coin', symbol: 'EUROC', totalAmount: '392838070.4531641', chains: [
+      { amount: '57273.88', chain: 'ARC', updateDate: '2026-08-11T03:54:02.130875Z' },
+      { amount: '293238266.95', chain: 'ETH', updateDate: '2026-08-11T03:54:02Z' },
+      { amount: '49226040.53', chain: 'BASE', updateDate: '2026-08-11T03:54:02Z' } ] },
+    { name: 'USD Coin', symbol: 'USDC', totalAmount: '72230737811.31613435', chains: [
+      { amount: '40476736.179677', chain: 'ALGO', updateDate: '2026-08-11T03:54:04Z' },
+      { amount: '8779494.6391', chain: 'ARC', updateDate: '2026-08-11T03:54:04.176840Z' },
+      { amount: '49701425402.44', chain: 'ETH', updateDate: '2026-08-11T03:54:03Z' } ] },
+  ]};
+
+  const cst = parseCircleStablecoins(circleReal);
+  ok(cst !== null && cst.usdc && cst.eurc, 'The real payload parses and finds both tokens');
+  ok(near(cst.usdc.arc, 8779494.6391, 0.01), 'USDC on Arc is read exactly', cst.usdc.arc);
+  ok(near(cst.eurc.arc, 57273.88, 0.01), 'EURC on Arc is read exactly', cst.eurc.arc);
+  ok(cst.eurc.key === 'eurc', 'Circle calls it EUROC; it is mapped to EURC for display');
+  ok(cst.usdc.chains[0].chain === 'ETH', 'Chains are sorted largest first', cst.usdc.chains[0].chain);
+
+  ok(parseCircleStablecoins(null) === null, 'A null payload yields null rather than throwing');
+  ok(parseCircleStablecoins({ data: [] }) === null, 'An empty payload yields null');
+  // A zero total would divide into every share on the page and render the whole
+  // panel as a healthy-looking 0.00%.
+  ok(parseCircleStablecoins({ data: [{ symbol: 'USDC', totalAmount: '0', chains: [] }] }) === null,
+     'A zero total is refused rather than treated as zero supply');
+  ok(parseCircleStablecoins({ data: [{ symbol: 'USDC', totalAmount: 'abc', chains: [] }] }) === null,
+     'A non-numeric total is refused');
+  const stNeg = parseCircleStablecoins({ data: [{ symbol: 'USDC', totalAmount: '100',
+    chains: [{ chain: 'ARC', amount: '-5' }, { chain: 'ETH', amount: '100' }] }] });
+  ok(stNeg.usdc.arc === null, 'A negative chain amount is dropped, so Arc reads as unknown');
+
+  const cgReal = parseCoinGeckoMarkets([
+    { id: 'usd-coin', current_price: 0.99962, market_cap: 72212694625 },
+    { id: 'euro-coin', current_price: 1.15, market_cap: 453124198 }]);
+  ok(cgReal.usdc.price === 0.99962 && cgReal.eurc.price === 1.15, 'Prices parse');
+  ok(parseCoinGeckoMarkets([{ id: 'usd-coin', current_price: 0 }]) === null,
+     'A zero price is refused — it would zero every valuation on the page');
+
+  /* -------------------------------- Stablecoins — units, share, formatting */
+  group('Stablecoins — 6-decimal units past 2^53');
+
+  // A realistic USDC supply at 6dp is ~7.2e16 raw units. Number(raw)/1e6 would
+  // lose precision here, which is why stableUnits splits in BigInt first.
+  const stBig = 72230737811316134n;
+  ok(stBig > 9007199254740992n, 'The fixture genuinely exceeds 2^53', stBig.toString());
+  ok(near(stableUnits(stBig, 6), 72230737811.316134, 0.001),
+     'A full USDC supply keeps its precision', stableUnits(stBig, 6));
+  ok(stableUnits(1000000n, 6) === 1, '1,000,000 raw units at 6dp is 1.00');
+  ok(stableUnits(0n, 6) === 0, 'Zero is zero, not null');
+  ok(stableUnits(-1n, 6) === null && stableUnits(null, 6) === null,
+     'Negative and null raw values are refused');
+
+  ok(near(stableShareOfTotal(8779494.6391, 72230737811.316), 0.012154, 0.0001),
+     "Arc's share of all USDC", stableShareOfTotal(8779494.6391, 72230737811.316));
+  ok(stableShareOfTotal(5, 0) === null, 'A zero total never divides — it yields null');
+
+  const stRank = stableChainRank(cst.usdc.chains, 'ARC');
+  ok(stRank && stRank.rank === 3 && stRank.of === 3, 'Arc ranks among the chains it appears on',
+     stRank && stRank.rank + '/' + stRank.of);
+  ok(stableChainRank(cst.usdc.chains, 'NOPE') === null,
+     'An absent chain yields null rather than an invented position');
+
+  ok(stableFormatBig(72230737811, '$') === '$72.23bn', 'Billions', stableFormatBig(72230737811, '$'));
+  ok(stableFormatBig(57273.88, '€') === '€57.3k', 'Thousands', stableFormatBig(57273.88, '€'));
+  ok(stableFormatExact(8779494.6391, '$') === '$8,779,494.64', 'The exact figure people will check');
+  ok(stableFormatBig(null, '$') === '—' && stableFormatExact(null, '$') === '—' &&
+     stableFormatPct(null) === '—' && stableFormatPeg(null) === '—',
+     'Every formatter renders a dash for missing data, never a misleading zero');
+  ok(stableFormatPct(0.0001) === '<0.001%',
+     'A tiny share reads as "<0.001%" rather than rounding to 0.0000%');
+  ok(stableFormatPeg(-0.038) === '−0.038%', 'A depeg uses a real minus sign');
+  ok(near(stablePegDelta(0.99962, 1), -0.038, 0.001), 'USDC sits just under its dollar peg');
+
+  /* --------------------------------- Stablecoins — issuance logs, bounded */
+  group('Stablecoins — mint/burn decode and the measured log ceiling');
+
+  // The RPC answers 10,000 blocks, refuses 50,000 with "requested range too
+  // large", and rate-limits at 200,000. The clamp is a constant so nothing a
+  // visitor does can widen it.
+  ok(stableLogRange(56384684, 50000).to - stableLogRange(56384684, 50000).from === 10000,
+     '50,000 blocks clamps to the 10,000 the RPC will actually serve');
+  ok(stableLogRange(56384684, 9000).to - stableLogRange(56384684, 9000).from === 9000,
+     'A legal span is left alone');
+  ok(stableLogRange(100, 9000).from === 0, 'Never asks for a negative block');
+  ok(stableLogRange('nope', 9000) === null, 'A bad tip yields null');
+
+  // Real logs captured from Arc on 2026-08-11.
+  const stMint = { blockNumber: '0x35c5397',
+    transactionHash: '0x74fe3b53b2e57fdfff6d6d721ee4bbefc53092516e9b05551320be0cf578fca0',
+    topics: ['0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef',
+             '0x0000000000000000000000000000000000000000000000000000000000000000',
+             '0x000000000000000000000000c17d06b66fb2f308bb3af99231a45380a28563a2'],
+    data: '0x0000000000000000000000000000000000000000000000000000000000111186' };
+  const stBurn = { blockNumber: '0x35c5f28',
+    transactionHash: '0x4eeb364f3c90abb8dbe585e256795176274305f6678ee76f53e040bb1ba34683',
+    topics: ['0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef',
+             '0x000000000000000000000000b43db544e2c27092c107639ad201b3defabcf192',
+             '0x0000000000000000000000000000000000000000000000000000000000000000'],
+    data: '0x00000000000000000000000000000000000000000000000000000000000605d9' };
+
+  const stRows = parseMintBurnLogs([stMint, stBurn], 6);
+  const stM = stRows.find((r) => r.kind === 'mint');
+  const stB = stRows.find((r) => r.kind === 'burn');
+  ok(stRows.length === 2, 'Both real logs decode', stRows.length);
+  ok(stM && near(stM.amount, 1.118598, 1e-9), 'Mint amount at 6dp', stM && stM.amount);
+  ok(stM && stM.address === '0xc17d06b66fb2f308bb3af99231a45380a28563a2',
+     'A mint names its recipient');
+  ok(stB && near(stB.amount, 0.394713, 1e-9), 'Burn amount at 6dp', stB && stB.amount);
+  ok(stB && stB.address === '0xb43db544e2c27092c107639ad201b3defabcf192',
+     'A burn names its sender — here CCTP TokenMinterV2, i.e. a bridge-out');
+  ok(stRows[0].block > stRows[1].block, 'Newest first');
+  ok(near(stableNetIssuance(stRows), 1.118598 - 0.394713, 1e-9), 'Net issuance is mints less burns');
+
+  // A wallet-to-wallet transfer is the overwhelming majority of Transfer logs
+  // and must never be counted as issuance.
+  ok(parseMintBurnLogs([{ blockNumber: '0x1', data: '0x1', topics: [
+      '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef',
+      '0x000000000000000000000000aaaa000000000000000000000000000000000000',
+      '0x000000000000000000000000bbbb000000000000000000000000000000000000'] }], 6).length === 0,
+     'An ordinary transfer is not counted as a mint or a burn');
+  ok(parseMintBurnLogs([Object.assign({}, stMint, { topics: ['0xdeadbeef', stMint.topics[1], stMint.topics[2]] })], 6).length === 0,
+     'A log with a different topic0 is ignored');
+  ok(parseMintBurnLogs([{ topics: [] }], 6).length === 0 && parseMintBurnLogs(null, 6).length === 0,
+     'Malformed and null log lists are skipped, never thrown on');
+
   /* ---------------------------------------------- Arc — privacy invariant */
   group('Arc — privacy invariant (holdings must never reach the chain)');
 
@@ -1024,6 +1156,13 @@
     arcWeiToUsdc, arcUsdcToWei, arcWeiToErc20Units, arcGasCostUsdc, arcMaxFeePerGas,
     arcTileCol, arcTileRow, arcTileId, arcTileIsClaimable,
     arcShortAddress, arcSameAddress, arcWibDate, arcTxUrl, arcAddressUrl,
+    // stables.js reads the connected wallet's balance, so it is exactly the kind
+    // of code that could start touching the ledger. Every pure function in it is
+    // listed here so the scan below keeps covering the new surface.
+    stableNum, parseCircleStablecoins, parseCoinGeckoMarkets, stableUnits,
+    stableShareOfTotal, stableChainRank, stableFormatBig, stableFormatExact,
+    stableFormatPct, stablePegDelta, stableFormatPeg, stableLogRange,
+    parseMintBurnLogs, stableNetIssuance,
   ].map((fn) => fn.toString()).join('\n');
 
   ok(arcSource.indexOf('landbank.v1') === -1,

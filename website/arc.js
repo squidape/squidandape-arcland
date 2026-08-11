@@ -798,6 +798,14 @@ window.Arc = {
   contract: ARC_CONTRACT,
   explorer: ARC_EXPLORER,
   chainId: ARC_CHAIN_ID,
+
+  /**
+   * Shared so other files (stables.js) reuse the four-endpoint fallback rather
+   * than keeping a second copy of the endpoint list, which would drift.
+   * `call` is the generic form of ethCall(), which is pinned to the registry.
+   */
+  rpc: rpc,
+  call: (to, data) => rpc('eth_call', [{ to: to, data: data }, 'latest']),
 };
 
 discoverWallets();

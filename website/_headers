@@ -13,3 +13,59 @@
   Cache-Control: no-cache
 /*.css
   Cache-Control: no-cache
+
+# ---------------------------------------------------------------- security
+#
+# This site has no backend, no accounts and no secrets, so the threat that
+# actually matters is injected script: something that runs in the page and
+# quietly ships a wallet address, a balance or a signature request somewhere.
+# connect-src is therefore the load-bearing directive here — it is an allowlist
+# of every origin this code is permitted to talk to, and nothing else can be
+# reached even if an injection succeeds.
+#
+# script-src is a strict allowlist too. The one inline script is the <head>
+# theme boot, which exists so the page never flashes the wrong theme before
+# first paint; it is pinned by hash rather than waved through with
+# 'unsafe-inline'. IF THAT SCRIPT IS EDITED, THE HASH MUST BE RECOMPUTED:
+#   python3 -c "import re,hashlib,base64,pathlib; \
+#     b=re.findall(r'<script>(.*?)</script>', pathlib.Path('index.html').read_text(), re.S)[0]; \
+#     print('sha256-'+base64.b64encode(hashlib.sha256(b.encode()).digest()).decode())"
+# A stale hash means the theme boot is blocked and the page loads in the wrong
+# theme — visible, but easy to misread as a CSS bug.
+#
+# style-src carries 'unsafe-inline', and that is a deliberate, narrower
+# compromise rather than an oversight. The whale list colours each swatch by
+# hue and by rank (iso.js whaleColor), which is a per-row computed value that
+# cannot be enumerated as a class or hashed. Inline *style* injection is a far
+# weaker vector than inline script — with script-src strict and connect-src
+# closed, there is nowhere for CSS-based exfiltration to send anything.
+#
+# img-src allows data: because wallet icons arrive as data: URIs over EIP-6963
+# (already validated as data: in arc.js, which refuses remote icon URLs), and
+# the favicon is an inline SVG data URI.
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-JaVZ0WT65MSppYZijq0xB8N4mUtPMN0fNDrgkL/RRIc='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://rpc.testnet.arc.io https://rpc.blockdaemon.testnet.arc.io https://rpc.drpc.testnet.arc.io https://rpc.quicknode.testnet.arc.io https://api.circle.com https://api.coingecko.com https://www.okx.ac; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  X-Frame-Options: DENY
+  Cross-Origin-Opener-Policy: same-origin
+  Permissions-Policy: accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=(), interest-cohort=()
+
+# tests.html needs its own, looser script-src, and this is a deliberate scoping
+# decision rather than a hole.
+#
+# The test runner is one large inline <script> that grows every time an
+# assertion is added. Pinning it by hash would mean recomputing that hash on
+# every edit, and a forgotten recompute fails silently-ish: the page loads,
+# runs nothing, and sits on "running…" — which reads as a broken test rather
+# than a broken header. That is a worse failure than the risk it removes.
+#
+# What it costs is small: this page is a developer tool that renders no
+# user input, holds no wallet connection and shows no balances. It keeps the
+# same closed connect-src as everything else, so even a successful injection
+# here has nowhere to send anything.
+#
+# This rule is placed AFTER /* so its Content-Security-Policy wins for this path.
+/tests.html
+  Cache-Control: no-cache
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://rpc.testnet.arc.io https://rpc.blockdaemon.testnet.arc.io https://rpc.drpc.testnet.arc.io https://rpc.quicknode.testnet.arc.io https://api.circle.com https://api.coingecko.com https://www.okx.ac; object-src 'none'; base-uri 'none'; frame-ancestors 'none'

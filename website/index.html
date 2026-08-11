@@ -59,6 +59,17 @@
     </p>
   </section>
 
+  <!-- Top-level sections. Distinct from the Board/Globe tabs inside the map
+       panel, which switch a renderer rather than a section of the page. -->
+  <nav class="sectiontabs" aria-label="Section">
+    <button id="sec-land" class="sectiontab is-on" type="button" aria-pressed="true">
+      🗺️ LAND<span>21,000,000 fixed</span>
+    </button>
+    <button id="sec-stables" class="sectiontab" type="button" aria-pressed="false">
+      ⊙ STABLECOINS<span>USDC &amp; EURC on Arc</span>
+    </button>
+  </nav>
+
   <!-- Wallet picker. Populated from EIP-6963 announcements, so it lists the
        wallets actually installed rather than a hardcoded set. -->
   <div id="wallet-modal" class="modal" hidden>
@@ -115,6 +126,8 @@
   <div id="storage-warning" class="flash is-error" hidden>
     This browser is blocking storage, so entries will vanish on refresh. Use Backup to keep them.
   </div>
+
+  <div id="view-land">
 
   <!-- ============================================================ ledger -->
   <section class="panel" aria-labelledby="h-record">
@@ -396,6 +409,144 @@
       <dd>No. It is a scale toy. It does not know or care what Bitcoin costs.</dd>
     </dl>
   </section>
+
+  </div><!-- /#view-land -->
+
+  <!-- ======================================================== stablecoins -->
+  <div id="view-stables" hidden>
+
+    <section class="panel" aria-labelledby="h-onarc">
+      <h2 id="h-onarc">On Arc</h2>
+      <p class="panel__lede">
+        Arc is Circle's chain and <strong>USDC is its native gas token</strong> — the fee for a
+        transaction is paid in dollars, not in a separate coin you have to acquire first.
+        Supply figures come from <strong>Circle's own published data</strong>, not from this
+        chain's token contract. <span id="stables-src" class="muted"></span>
+      </p>
+
+      <div class="stats">
+        <div class="stat stat--hero">
+          <div class="stat__label">USDC on Arc</div>
+          <div class="stat__value" id="st-usdc-arc">—</div>
+          <div class="stat__sub" id="st-usdc-arc-sub"></div>
+        </div>
+        <div class="stat stat--hero">
+          <div class="stat__label">EURC on Arc</div>
+          <div class="stat__value" id="st-eurc-arc">—</div>
+          <div class="stat__sub" id="st-eurc-arc-sub"></div>
+        </div>
+        <div class="stat">
+          <div class="stat__label">Cost of one transaction</div>
+          <div class="stat__value stat__value--small" id="st-gas">—</div>
+          <div class="stat__sub">paid in USDC, because gas <em>is</em> USDC</div>
+        </div>
+        <div class="stat">
+          <div class="stat__label">Peg</div>
+          <div class="stat__value stat__value--small" id="st-peg">—</div>
+          <div class="stat__sub" id="st-peg-sub"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="h-yourstables">
+      <h2 id="h-yourstables">Your balance</h2>
+      <div id="st-wallet-empty" class="banner">
+        Connect a wallet to see your USDC and EURC on Arc. Nothing is stored and nothing is
+        uploaded — the balance is read from the chain each time and shown only to you.
+      </div>
+      <div id="st-wallet-have" hidden>
+        <div class="stats">
+          <div class="stat">
+            <div class="stat__label">Your USDC</div>
+            <div class="stat__value" id="st-bal-usdc">—</div>
+            <div class="stat__sub" id="st-bal-usdc-sub"></div>
+          </div>
+          <div class="stat">
+            <div class="stat__label">Your EURC</div>
+            <div class="stat__value" id="st-bal-eurc">—</div>
+            <div class="stat__sub" id="st-bal-eurc-sub"></div>
+          </div>
+        </div>
+        <p class="panel__foot muted" id="st-bal-foot"></p>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="h-issuance">
+      <h2 id="h-issuance">Live issuance on Arc</h2>
+      <p class="panel__lede">
+        Every mint and burn of USDC and EURC on Arc in the last few thousand blocks. Most burns
+        are <strong>CCTP bridge-outs</strong> — the coin is not destroyed, it is moving to
+        another chain, and a matching mint appears there.
+      </p>
+      <div class="table-scroll">
+        <table class="ledger">
+          <thead>
+            <tr><th>Block</th><th></th><th class="num">Amount</th><th>Address</th></tr>
+          </thead>
+          <tbody id="st-feed">
+            <tr><td colspan="4" class="tip__empty">Loading recent activity…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="h-global">
+      <h2 id="h-global">Where Arc sits</h2>
+      <p class="panel__lede">
+        Circle issues USDC and EURC across many chains. Arc is the newest of them, which is why
+        its share is small — it is a chain that has just begun, not one that is shrinking.
+      </p>
+      <div class="stats">
+        <div class="stat">
+          <div class="stat__label">USDC in existence</div>
+          <div class="stat__value stat__value--small" id="st-usdc-total">—</div>
+          <div class="stat__sub" id="st-usdc-total-sub"></div>
+        </div>
+        <div class="stat">
+          <div class="stat__label">EURC in existence</div>
+          <div class="stat__value stat__value--small" id="st-eurc-total">—</div>
+          <div class="stat__sub" id="st-eurc-total-sub"></div>
+        </div>
+      </div>
+      <div class="table-scroll">
+        <table class="ledger">
+          <thead>
+            <tr><th>#</th><th>Chain</th><th class="num">USDC</th><th class="num">Share</th></tr>
+          </thead>
+          <tbody id="st-chains">
+            <tr><td colspan="4" class="tip__empty">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel panel--quiet">
+      <h2>Where these numbers come from</h2>
+      <dl class="faq">
+        <dt>Why not read supply from the token contract?</dt>
+        <dd>Because on <strong>Arc Testnet that number is meaningless</strong>. The faucet mints
+            on demand, so the contract currently reports over <strong>212 billion</strong> USDC
+            and <strong>2 trillion</strong> EURC. Those are real reads of a real contract and
+            complete fiction as supply. Supply here comes from
+            <code>api.circle.com/v1/stablecoins</code>, Circle's own published figures. The chain
+            is used only for what it is genuinely authoritative about: your balance, and actual
+            mint and burn activity.</dd>
+        <dt>Is any of this stored?</dt>
+        <dd>No. There is no account, no server and no database. Your balance is read from the
+            chain when you connect and shown only to you — it is never written to storage and
+            never transmitted anywhere.</dd>
+        <dt>Does this site need an API key?</dt>
+        <dd>No, and it could not safely have one. This is a static page with no backend, so any
+            key placed in its JavaScript would be published to everyone who loads it. Every
+            source used here is public and keyless.</dd>
+        <dt>How fresh is it?</dt>
+        <dd>Supply refreshes every minute, and each figure carries its own age. If a source
+            fails, the last good number stays on screen with an honest staleness note rather
+            than blanking or resetting to zero.</dd>
+      </dl>
+    </section>
+
+  </div><!-- /#view-stables -->
 </main>
 
 <footer class="footer wrap">
@@ -407,6 +558,8 @@
 <script src="price.js"></script>
 <!-- arc.js before iso.js: the board's world view calls into the Arc helpers. -->
 <script src="arc.js"></script>
+<!-- stables.js after arc.js: it reuses the ABI codec and the shared RPC fallback. -->
+<script src="stables.js"></script>
 <script src="iso.js"></script>
 <script src="globe.js"></script>
 </body>
