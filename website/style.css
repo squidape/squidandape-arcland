@@ -558,6 +558,15 @@ input:focus, select:focus, button:focus-visible, label.btn:focus-within {
 .flow--mint { color: var(--green); }
 .flow--burn { color: var(--muted); }
 
+/* Issuance timestamps: the clock is the fact, the relative age is the context,
+   so the age is quieter and sits under it rather than competing. */
+.feed-time { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.feed-ago { display: block; font-size: 10px; color: var(--muted); }
+/* Batched CCTP burns share a block and an amount, so without the tx the rows
+   look like duplicates of one event when they are ten separate transactions. */
+.feed-tx { display: block; font-size: 10px; color: var(--muted);
+           font-family: var(--mono, ui-monospace, Menlo, monospace); }
+
 /* The Arc row in the chain table has to be findable at a glance. */
 .chain-arc { color: var(--gold); font-weight: 700; }
 .chain-arc td { background: var(--gold-bg); }

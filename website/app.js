@@ -777,16 +777,26 @@ function renderStables() {
   // --- Live issuance ------------------------------------------------------
   const feed = $('#st-feed');
   if (!s.feed.length) {
-    feed.innerHTML = `<tr><td colspan="4" class="tip__empty">${
+    feed.innerHTML = `<tr><td colspan="5" class="tip__empty">${
       s.at ? 'No mints or burns in the last few thousand blocks.' : 'Loading recent activity…'}</td></tr>`;
   } else {
     // Every field here comes off the chain, so all of it is escaped even though
     // the values are numeric or hex by construction.
+    const now = Date.now();
     feed.innerHTML = s.feed.map((r) => {
       const url = r.tx ? `${window.Arc.explorer}/tx/${encodeURIComponent(r.tx)}` : null;
-      const who = escapeHtml(arcShortAddress(r.address));
+      // Most counterparties are Circle's own contracts; a name says far more
+      // than the hex does. Falls back to the address when it is somebody else.
+      const known = stableKnownName(r.address);
+      const who = known
+        ? `${escapeHtml(known)}<span class="feed-tx">${escapeHtml(arcShortAddress(r.address))}</span>`
+        : escapeHtml(arcShortAddress(r.address));
+      const t = stableFeedTime(r.ts, now);
       return `<tr>
-        <td>${url ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${r.block}</a>` : r.block}</td>
+        <td class="feed-time">${escapeHtml(t.clock)}${
+          t.ago ? `<span class="feed-ago">${escapeHtml(t.ago)}</span>` : ''}</td>
+        <td>${url ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${r.block}</a>` : r.block}${
+          r.tx ? `<span class="feed-tx">${escapeHtml(r.tx.slice(0, 10))}…</span>` : ''}</td>
         <td><span class="flow flow--${r.kind === 'mint' ? 'mint' : 'burn'}">${
           r.kind === 'mint' ? '+ MINT' : '− BURN'}</span></td>
         <td class="num">${escapeHtml(stableFormatExact(r.amount, r.currency))} ${escapeHtml(r.symbol)}</td>

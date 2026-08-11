@@ -1031,6 +1031,14 @@
   ok(stableFormatBig(72230737811, '$') === '$72.23bn', 'Billions', stableFormatBig(72230737811, '$'));
   ok(stableFormatBig(57273.88, '€') === '€57.3k', 'Thousands', stableFormatBig(57273.88, '€'));
   ok(stableFormatExact(8779494.6391, '$') === '$8,779,494.64', 'The exact figure people will check');
+  // CCTP moves plenty of sub-cent amounts. At a flat 2dp a real transfer renders
+  // as "$0.00" and reads as nothing having happened.
+  ok(stableFormatExact(0.000062, '$') === '$0.000062',
+     'A sub-cent amount keeps its digits instead of collapsing to $0.00',
+     stableFormatExact(0.000062, '$'));
+  ok(stableFormatExact(0.75, '$') === '$0.750000', 'Sub-dollar amounts show token precision');
+  ok(stableFormatExact(1.05, '$') === '$1.05', 'A dollar or more stays at 2dp');
+  ok(stableFormatExact(0, '$') === '$0.00', 'A genuine zero is still plain');
   ok(stableFormatBig(null, '$') === '—' && stableFormatExact(null, '$') === '—' &&
      stableFormatPct(null) === '—' && stableFormatPeg(null) === '—',
      'Every formatter renders a dash for missing data, never a misleading zero');
@@ -1079,6 +1087,30 @@
   ok(stRows[0].block > stRows[1].block, 'Newest first');
   ok(near(stableNetIssuance(stRows), 1.118598 - 0.394713, 1e-9), 'Net issuance is mints less burns');
 
+  // Timestamps come from the block header, not from an estimate — and they are
+  // WIB, because a UTC clock beside a "3m ago" would be seven hours out for the
+  // person reading it.
+  const stNow = Date.UTC(2026, 7, 11, 5, 15, 0);          // 12:15 WIB
+  const stT = stableFeedTime(Date.UTC(2026, 7, 11, 5, 13, 9) / 1000, stNow);
+  ok(stT.clock === '12:13:09', 'A block timestamp renders as a WIB clock', stT.clock);
+  ok(stT.ago === '1m ago', 'and carries how long ago that was', stT.ago);
+  ok(stableFeedTime(Date.UTC(2026, 7, 10, 17, 0, 0) / 1000, stNow).clock === '00:00:00',
+     '17:00 UTC is exactly midnight WIB');
+  ok(stableFeedTime(null, stNow).clock === '—' && stableFeedTime(0, stNow).clock === '—',
+     'A missing timestamp is a dash, never 1970');
+  ok(stableFeedTime('nope', stNow).ago === '', 'A malformed timestamp yields no relative age');
+
+  // Nearly every counterparty in the feed is one of Circle's own contracts, so
+  // naming them is the difference between a readable panel and a column of hex.
+  ok(stableKnownName('0xb43db544e2c27092c107639ad201b3defabcf192') === 'CCTP TokenMinter',
+     'The CCTP minter is named — it is the source of most burns');
+  ok(stableKnownName('0xB43DB544E2C27092C107639AD201B3DEFABCF192') === 'CCTP TokenMinter',
+     'Address matching is case-insensitive, since logs and docs disagree on case');
+  ok(stableKnownName('0x0077777d7eba4688bdef3e311b846f25870a19b9') === 'Circle Gateway',
+     'Circle Gateway is named');
+  ok(stableKnownName('0xdeadbeef') === null && stableKnownName(null) === null,
+     'An ordinary address has no label, and null is safe');
+
   // A wallet-to-wallet transfer is the overwhelming majority of Transfer logs
   // and must never be counted as issuance.
   ok(parseMintBurnLogs([{ blockNumber: '0x1', data: '0x1', topics: [
@@ -1123,7 +1155,7 @@
     stableNum, parseCircleStablecoins, parseCoinGeckoMarkets, stableUnits,
     stableShareOfTotal, stableChainRank, stableFormatBig, stableFormatExact,
     stableFormatPct, stablePegDelta, stableFormatPeg, stableLogRange,
-    parseMintBurnLogs, stableNetIssuance,
+    parseMintBurnLogs, stableNetIssuance, stableFeedTime, stableKnownName,
   ].map((fn) => fn.toString()).join('\n');
 
   ok(arcSource.indexOf('landbank.v1') === -1,

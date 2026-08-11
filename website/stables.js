@@ -219,11 +219,20 @@ function stableFormatBig(n, currency) {
   return c + v.toFixed(2);
 }
 
-/** '$8,779,494.64' — the exact figure, for the number people will check. */
+/**
+ * '$8,779,494.64' — the exact figure, for the number people will check.
+ *
+ * Sub-dollar amounts widen to the token's full 6 decimals. At a flat 2dp a real
+ * 0.000062 USDC transfer renders as "$0.00", which reads as nothing happening
+ * when something did — the same misleading zero formatUsd already avoids. CCTP
+ * moves plenty of sub-cent amounts, so this is the common case in the feed, not
+ * an edge one.
+ */
 function stableFormatExact(n, currency) {
   const v = stableNum(n);
   if (v == null) return '—';
-  return (currency || '') + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const dp = v !== 0 && Math.abs(v) < 1 ? 6 : 2;
+  return (currency || '') + v.toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp });
 }
 
 /** '0.0121%' — small shares need more places than a percentage usually does. */
@@ -310,6 +319,47 @@ function parseMintBurnLogs(logs, decimals) {
   // Newest first. Block order is the only ordering available and is enough here.
   out.sort((a, b) => (b.block || 0) - (a.block || 0));
   return out;
+}
+
+/**
+ * Circle's own contracts on Arc, from docs.arc.io/arc/references/contract-addresses.
+ *
+ * Nearly every mint and burn in the feed comes from one of these, so without
+ * labels the panel is a column of identical-looking hex. Naming them turns it
+ * into what is actually happening: coins arriving from another chain over CCTP,
+ * or moving through Circle's Gateway.
+ */
+const STABLE_KNOWN = {
+  '0xb43db544e2c27092c107639ad201b3defabcf192': 'CCTP TokenMinter',
+  '0x8fe6b999dc680ccfdd5bf7eb0974218be2542daa': 'CCTP TokenMessenger',
+  '0xe737e5cebeeba77efe34d4aa090756590b1ce275': 'CCTP MessageTransmitter',
+  '0x0077777d7eba4688bdef3e311b846f25870a19b9': 'Circle Gateway',
+  '0x0022222abe238cc2c7bb1f21003f0a260052475b': 'Circle Gateway Minter',
+  '0xd68256f4d69c6bbecb873d8588ae0dc6b8e22e10': 'FX Escrow',
+};
+
+/** A known Circle contract's name, or null for an ordinary address. */
+function stableKnownName(address) {
+  if (!address) return null;
+  return STABLE_KNOWN[String(address).toLowerCase()] || null;
+}
+
+/**
+ * Clock and staleness for one issuance row.
+ *
+ * WIB, per the rule that every time on every page is Asia/Jakarta — a UTC clock
+ * next to a "3m ago" would silently be seven hours out for the person reading
+ * it. `nowMs` is injectable so the relative half is testable.
+ *
+ * Arc block timestamps are non-decreasing rather than strictly increasing, so
+ * two rows can legitimately share a clock reading. That is display only; the
+ * feed is ordered by block number, never by time.
+ */
+function stableFeedTime(tsSeconds, nowMs) {
+  const t = Number(tsSeconds);
+  if (!isFinite(t) || t <= 0) return { clock: '—', ago: '' };
+  const ms = t * 1000;
+  return { clock: wibClock(ms), ago: agoLabel(ms, nowMs) };
 }
 
 /** Net issued over a window: mints less burns. */
@@ -409,6 +459,37 @@ async function fetchIssuance(token) {
   return rows.map((r) => Object.assign({ token: token.key, symbol: token.symbol, currency: token.currency }, r));
 }
 
+/**
+ * Timestamps for the blocks a feed actually shows.
+ *
+ * Logs carry a block number but no time, so the times come from the block
+ * headers. Deduped first: twelve rows typically span only five or six distinct
+ * blocks, so this is a handful of calls rather than one per row. Bounded by
+ * STABLE_FEED_MAX so the number of requests can never grow with chain activity.
+ *
+ * Estimating the time from the block number and a 0.5 s block interval was the
+ * alternative, and was rejected: it would be a guess presented as a clock.
+ */
+async function fetchBlockTimes(rows) {
+  if (!window.Arc || !window.Arc.rpc || !rows.length) return {};
+  const blocks = [];
+  for (const r of rows.slice(0, STABLE_FEED_MAX)) {
+    if (r.block != null && blocks.indexOf(r.block) === -1) blocks.push(r.block);
+  }
+  const results = await Promise.all(blocks.map((b) =>
+    window.Arc.rpc('eth_getBlockByNumber', ['0x' + b.toString(16), false])));
+
+  const times = {};
+  blocks.forEach((b, i) => {
+    const blk = results[i];
+    if (blk && blk.timestamp) {
+      const t = Number(BigInt(blk.timestamp));
+      if (isFinite(t) && t > 0) times[b] = t;
+    }
+  });
+  return times;
+}
+
 async function refresh() {
   let anyOk = false;
 
@@ -433,7 +514,12 @@ async function refresh() {
 
   const feeds = await Promise.all(STABLE_TOKENS.map(fetchIssuance));
   const merged = [].concat.apply([], feeds).sort((a, b) => (b.block || 0) - (a.block || 0));
-  if (merged.length) { S.feed = merged.slice(0, STABLE_FEED_MAX); anyOk = true; }
+  if (merged.length) {
+    const shown = merged.slice(0, STABLE_FEED_MAX);
+    const times = await fetchBlockTimes(shown);
+    S.feed = shown.map((r) => Object.assign({ ts: times[r.block] || null }, r));
+    anyOk = true;
+  }
 
   const gasHex = window.Arc && window.Arc.rpc ? await window.Arc.rpc('eth_gasPrice', []) : null;
   if (gasHex != null) {
