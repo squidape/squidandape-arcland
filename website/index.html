@@ -26,11 +26,59 @@
         ? 'light' : 'dark';
     }
     root.setAttribute('data-theme', saved);
+
+    // Landing vs terminal, settled here for the same reason as the theme: a
+    // deep link like #/stables must never flash the landing on its way past.
+    root.setAttribute('data-view', /^#\/(land|stables)/.test(location.hash) ? 'app' : 'landing');
   })();
 </script>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
+
+<!-- Landing. Shown when the page is opened with no route; picking a card enters
+     the terminal at that section. A deep link (#/land, #/stables) skips it, so a
+     shared URL still lands where it says it will. -->
+<div id="landing">
+  <div class="landing__inner">
+    <div class="landing__mark">🗺️ ARC LAND REGISTRY</div>
+    <h1 class="landing__h1">Two supplies.<br>One chain.</h1>
+    <p class="landing__lede">
+      Bitcoin's 21,000,000 is fixed and was drawn once. The dollar on this chain
+      is minted and burned every second. Both are on <strong>Arc</strong>, where
+      the gas you pay <em>is</em> USDC.
+    </p>
+
+    <div class="landing__cards">
+      <button class="lcard" type="button" data-go="land">
+        <span class="lcard__icon">🗺️</span>
+        <span class="lcard__name">LAND</span>
+        <span class="lcard__tag">21,000,000 — fixed forever</span>
+        <span class="lcard__desc">
+          All of Bitcoin's supply drawn as a map. Track what you own, then claim
+          one of the 1,791 unowned tiles on Arc.
+        </span>
+        <span class="lcard__go">Enter →</span>
+      </button>
+
+      <button class="lcard" type="button" data-go="stables">
+        <span class="lcard__icon">⊙</span>
+        <span class="lcard__name">STABLECOINS</span>
+        <span class="lcard__tag">USDC &amp; EURC — elastic</span>
+        <span class="lcard__desc">
+          Circle's own supply figures, Arc's share of them, live mint and burn
+          activity, and your balance.
+        </span>
+        <span class="lcard__go">Enter →</span>
+      </button>
+    </div>
+
+    <p class="landing__foot">
+      No accounts. No server. Your holdings never leave this browser.
+      <a href="https://github.com/squidape/squidandape-arcland" target="_blank" rel="noopener noreferrer">Source</a>
+    </p>
+  </div>
+</div>
 
 <header class="topbar">
   <div class="wrap topbar__inner">

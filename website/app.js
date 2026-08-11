@@ -695,13 +695,44 @@ function sectionFromHash() {
   return m ? m[1] : 'land';
 }
 
+/** Landing or terminal. The <head> boot script set the initial value. */
+function showLanding(on) {
+  document.documentElement.setAttribute('data-view', on ? 'landing' : 'app');
+  if (on) {
+    history.replaceState(null, '', location.pathname);
+  } else if (window.Iso && window.Iso.onShow) {
+    // The board was display:none while the landing was up, so it measured zero.
+    window.Iso.onShow();
+  }
+}
+
 function initSections() {
   SECTIONS.forEach((s) => {
     const btn = $(s.btn);
     if (btn) btn.addEventListener('click', () => showSection(s.id, true));
   });
-  // Hash routing so the stablecoin view can be linked to directly.
-  window.addEventListener('hashchange', () => showSection(sectionFromHash(), false));
+
+  // Landing cards enter the terminal at the section they name.
+  document.querySelectorAll('#landing [data-go]').forEach((el) => {
+    el.addEventListener('click', () => {
+      showSection(el.dataset.go, true);
+      showLanding(false);
+    });
+  });
+  // The wordmark goes back, which is the only way out without the back button.
+  const brand = $('.brand');
+  if (brand) brand.addEventListener('click', () => showLanding(true));
+
+  // Hash routing so either view can be linked to directly.
+  window.addEventListener('hashchange', () => {
+    const hash = location.hash;
+    if (/^#\/(land|stables)/.test(hash)) {
+      showSection(sectionFromHash(), false);
+      showLanding(false);
+    } else {
+      showLanding(true);
+    }
+  });
   showSection(sectionFromHash(), false);
 }
 

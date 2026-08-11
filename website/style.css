@@ -12,7 +12,21 @@
    (iso.js) and the globe (globe.js) carry their own palettes keyed to the same
    `data-theme` attribute, since they paint pixels rather than style boxes. */
 
+/* Montserrat, self-hosted.
+   Not from Google Fonts: an external stylesheet and font host would mean two
+   more origins in connect-src/style-src, a request to a third party on every
+   page load, and a dependency the "no build step, no CDN" property does not
+   have. One 35KB variable woff2 covers 400-700. SIL OFL, licence in fonts/. */
+@font-face {
+  font-family: 'Montserrat';
+  src: url('fonts/montserrat-latin.woff2') format('woff2');
+  font-weight: 100 900;                 /* variable axis */
+  font-style: normal;
+  font-display: swap;                   /* text stays readable while it loads */
+}
+
 :root {
+  --font: 'Montserrat', ui-sans-serif, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --bg:        #0c1116;
   --panel:     #131a21;
   --panel-2:   #182029;
@@ -179,10 +193,70 @@ body {
     linear-gradient(90deg, var(--grid) 1px, transparent 1px);
   background-size: 44px 44px;
   color: var(--text);
-  font: 16px/1.6 ui-sans-serif, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font: 16px/1.6 var(--font);
 }
 
 .wrap { max-width: 920px; margin: 0 auto; padding: 0 20px; }
+
+/* ------------------------------------------------------------- landing */
+
+/* The landing and the terminal are one page in two states, driven by
+   data-view on <html>. The <head> boot script sets it from the hash before
+   first paint, so a deep link never flashes the landing on the way through. */
+:root[data-view="landing"] .topbar,
+:root[data-view="landing"] main,
+:root[data-view="landing"] .footer { display: none; }
+:root[data-view="app"] #landing { display: none; }
+
+#landing {
+  min-height: 100vh;
+  display: flex; align-items: center; justify-content: center;
+  padding: 40px 20px;
+}
+.landing__inner { max-width: 880px; width: 100%; }
+.landing__mark {
+  font-size: 12px; font-weight: 700; letter-spacing: .22em;
+  color: var(--muted); margin-bottom: 26px;
+}
+.landing__h1 {
+  font-family: var(--font);
+  margin: 0 0 18px;
+  font-size: clamp(38px, 8vw, 76px);
+  font-weight: 700; line-height: 1.02; letter-spacing: -.03em;
+}
+.landing__lede {
+  margin: 0 0 42px; max-width: 56ch;
+  font-size: clamp(15px, 2.2vw, 18px); color: var(--muted);
+}
+.landing__lede strong { color: var(--gold); font-weight: 600; }
+
+.landing__cards { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 680px) { .landing__cards { grid-template-columns: 1fr; } }
+
+.lcard {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 6px;
+  padding: 26px 24px 22px; cursor: pointer; text-align: left;
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: 16px; color: var(--text); font-family: var(--font);
+  transition: border-color .15s, transform .15s;
+}
+.lcard:hover { border-color: var(--gold-solid); transform: translateY(-2px); }
+.lcard:focus-visible { outline: 2px solid var(--gold-solid); outline-offset: 3px; }
+.lcard__icon { font-size: 26px; line-height: 1; margin-bottom: 8px; }
+.lcard__name { font-size: 20px; font-weight: 700; letter-spacing: .1em; }
+.lcard__tag { font-size: 11px; font-weight: 600; letter-spacing: .08em; color: var(--gold); }
+.lcard__desc { margin-top: 8px; font-size: 13px; line-height: 1.55; color: var(--muted); }
+.lcard__go {
+  margin-top: 16px; font-size: 12px; font-weight: 700;
+  letter-spacing: .08em; color: var(--gold);
+}
+.landing__foot {
+  margin: 34px 0 0; font-size: 12px; color: var(--muted);
+}
+.landing__foot a { color: var(--gold); margin-left: 10px; }
+
+/* Back to the landing from the terminal. */
+.brand { cursor: pointer; }
 
 /* -------------------------------------------------------------- topbar */
 
@@ -205,6 +279,7 @@ body {
 
 .hero { padding: 56px 0 28px; }
 .hero h1 {
+  font-family: var(--font);
   margin: 0 0 14px;
   font-size: clamp(30px, 6vw, 50px);
   line-height: 1.1; letter-spacing: -.02em;

@@ -29,7 +29,7 @@
 # 'unsafe-inline'. IF THAT SCRIPT IS EDITED, THE HASH MUST BE RECOMPUTED:
 #   python3 -c "import re,hashlib,base64,pathlib; \
 #     b=re.findall(r'<script>(.*?)</script>', pathlib.Path('index.html').read_text(), re.S)[0]; \
-#     print('sha256-'+base64.b64encode(hashlib.sha256(b.encode()).digest()).decode())"
+#     print('sha256-B71D7BX8yXOqhHfOc2+/+w6haSEqWdB85c9Kpb/d5OE='+base64.b64encode(hashlib.sha256(b.encode()).digest()).decode())"
 # A stale hash means the theme boot is blocked and the page loads in the wrong
 # theme — visible, but easy to misread as a CSS bug.
 #
@@ -50,7 +50,7 @@
 # (already validated as data: in arc.js, which refuses remote icon URLs), and
 # the favicon is an inline SVG data URI.
 /*
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-JaVZ0WT65MSppYZijq0xB8N4mUtPMN0fNDrgkL/RRIc='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://rpc.testnet.arc.io https://rpc.blockdaemon.testnet.arc.io https://rpc.drpc.testnet.arc.io https://rpc.quicknode.testnet.arc.io https://api.circle.com https://api.coingecko.com https://www.okx.ac; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-B71D7BX8yXOqhHfOc2+/+w6haSEqWdB85c9Kpb/d5OE='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://rpc.testnet.arc.io https://rpc.blockdaemon.testnet.arc.io https://rpc.drpc.testnet.arc.io https://rpc.quicknode.testnet.arc.io https://api.circle.com https://api.coingecko.com https://www.okx.ac; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
   X-Content-Type-Options: nosniff
   Referrer-Policy: no-referrer
   X-Frame-Options: DENY
