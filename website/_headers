@@ -66,6 +66,15 @@
 # here has nowhere to send anything.
 #
 # This rule is placed AFTER /* so its Content-Security-Policy wins for this path.
+#
+# BOTH paths are listed on purpose. Cloudflare Pages canonicalises /tests.html
+# to the extensionless /tests with a 308, and serves the page from there — so a
+# rule written only for /tests.html silently never applies to the URL anyone
+# actually loads, and the page sits blocked on "running…" while the header looks
+# correct in the file. That is exactly what happened the first time.
 /tests.html
+  Cache-Control: no-cache
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://rpc.testnet.arc.io https://rpc.blockdaemon.testnet.arc.io https://rpc.drpc.testnet.arc.io https://rpc.quicknode.testnet.arc.io https://api.circle.com https://api.coingecko.com https://www.okx.ac; object-src 'none'; base-uri 'none'; frame-ancestors 'none'
+/tests
   Cache-Control: no-cache
   Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://rpc.testnet.arc.io https://rpc.blockdaemon.testnet.arc.io https://rpc.drpc.testnet.arc.io https://rpc.quicknode.testnet.arc.io https://api.circle.com https://api.coingecko.com https://www.okx.ac; object-src 'none'; base-uri 'none'; frame-ancestors 'none'
